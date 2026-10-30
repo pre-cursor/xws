@@ -1,0 +1,4 @@
+# Activate a workspace-local virtual environment when one exists.
+if [[ -f "$XWS_WORKSPACE_PATH/.venv/bin/activate" ]]; then
+  source "$XWS_WORKSPACE_PATH/.venv/bin/activate"
+fi

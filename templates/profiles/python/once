@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+command -v python3 >/dev/null 2>&1 || {
+  printf "xws: Python profile requires python3 to create .venv\n" >&2
+  exit 1
+}
+python3 -m venv .venv

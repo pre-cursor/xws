@@ -1,0 +1,2 @@
+# Optional Go activation feature.
+# Configure GOPATH, GOTOOLCHAIN, or other literal variables in ../env as needed.

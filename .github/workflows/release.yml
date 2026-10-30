@@ -1,0 +1,108 @@
+name: Release packaging
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  cancel-in-progress: true
+  group: release-${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all --manifest-path picker/Cargo.toml -- --check
+      - name: Run unit tests
+        run: cargo test --manifest-path picker/Cargo.toml --locked --bin xws-picker
+      - name: Run integration tests
+        run: cargo test --manifest-path picker/Cargo.toml --locked --test cli -- --test-threads=1
+      - name: Verify tag matches package version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          package_version="$(cargo metadata --manifest-path picker/Cargo.toml --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          if [[ "$tag_version" != "$package_version" ]]; then
+            echo "Tag v$tag_version does not match xws-picker version $package_version" >&2
+            exit 1
+          fi
+
+  build:
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build picker
+        run: cargo build --manifest-path picker/Cargo.toml --release --locked --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: picker-${{ matrix.target }}
+          path: picker/target/${{ matrix.target }}/release/xws-picker
+          if-no-files-found: error
+
+  package:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: picker-*
+          path: bins
+      - name: Assemble release packages
+        run: |
+          mkdir -p dist
+          for target in \
+            aarch64-apple-darwin \
+            x86_64-apple-darwin \
+            x86_64-unknown-linux-gnu; do
+            stage="stage/${target}"
+            mkdir -p "$stage/xws/bin" "$stage/xws/share/xws/script"
+            install -m 644 LICENSE "$stage/xws/LICENSE"
+            install -m 755 "bins/picker-${target}/xws-picker" \
+              "$stage/xws/bin/xws-picker"
+            install -m 644 script/xws-common.sh script/xws.bash script/xws.zsh \
+              "$stage/xws/share/xws/script/"
+            cp -R templates "$stage/xws/share/xws/"
+            tar -C "$stage" -czf "dist/xws-${target}.tar.gz" xws
+          done
+          (cd dist && sha256sum xws-*.tar.gz > SHA256SUMS.txt)
+      - name: Smoke test Linux package
+        run: |
+          tar -xzf dist/xws-x86_64-unknown-linux-gnu.tar.gz -C /tmp
+          /tmp/xws/bin/xws-picker --help
+          bash -n xws-install
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME"
+          --repo "$GITHUB_REPOSITORY"
+          dist/*.tar.gz dist/SHA256SUMS.txt
+          --verify-tag --generate-notes

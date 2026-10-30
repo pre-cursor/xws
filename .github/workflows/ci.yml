@@ -1,0 +1,68 @@
+name: Continuous integration
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_call:
+
+concurrency:
+  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+
+jobs:
+  msrv-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - run: cargo check --locked --manifest-path picker/Cargo.toml
+
+  fmt-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: fmt
+        run: cargo fmt --all --manifest-path picker/Cargo.toml -- --check
+
+  lint-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: lint
+        run: cargo clippy --manifest-path picker/Cargo.toml --all-targets -- -D warnings
+
+  security:
+    uses: ./.github/workflows/security.yml
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: unit tests
+        run: cargo test --manifest-path picker/Cargo.toml --locked --bin xws-picker
+      - name: integration tests
+        run: cargo test --manifest-path picker/Cargo.toml --locked --test cli -- --test-threads=1
+
+      - name: Install coverage tool
+        run: cargo install --locked cargo-llvm-cov
+
+      - name: Generate coverage report
+        run: cargo llvm-cov --manifest-path picker/Cargo.toml --locked --html --fail-under-lines 80 -- --test-threads=1
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-coverage
+          path: picker/target/llvm-cov/html/
+          if-no-files-found: error

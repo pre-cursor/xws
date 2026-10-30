@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Runs once during workspace creation, from the workspace root.
+# Use this for workspace-local setup; do not install machine-wide products here.

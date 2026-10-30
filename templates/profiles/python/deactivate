@@ -1,0 +1,4 @@
+# Undo the virtual-environment activation performed by this profile.
+if [[ "${VIRTUAL_ENV-}" == "$XWS_WORKSPACE_PATH/.venv" ]] && type deactivate >/dev/null 2>&1; then
+  deactivate
+fi

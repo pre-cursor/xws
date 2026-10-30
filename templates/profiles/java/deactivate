@@ -1,0 +1,22 @@
+if [[ -z "${_XWS_JAVA_PREVIOUS_HOME_SET+x}" ]]; then
+  return 0
+fi
+
+if [[ "${_XWS_JAVA_PATH_ADDED-0}" == 1 ]]; then
+  _xws_path_remove "$_XWS_JAVA_ACTIVE_HOME/bin"
+fi
+if [[ "${_XWS_JAVA_PREVIOUS_HOME_SET-}" == x ]]; then
+  JAVA_HOME="$_XWS_JAVA_PREVIOUS_HOME"
+  if [[ "${_XWS_JAVA_PREVIOUS_HOME_EXPORTED-0}" == 1 ]]; then
+    export JAVA_HOME
+  else
+    if [[ -n "${ZSH_VERSION-}" ]]; then
+      typeset +x JAVA_HOME
+    else
+      export -n JAVA_HOME
+    fi
+  fi
+else
+  unset JAVA_HOME
+fi
+unset _XWS_JAVA_PREVIOUS_HOME_SET _XWS_JAVA_PREVIOUS_HOME _XWS_JAVA_PREVIOUS_HOME_EXPORTED _XWS_JAVA_ACTIVE_HOME _XWS_JAVA_PATH_ADDED

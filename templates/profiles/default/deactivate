@@ -1,0 +1,2 @@
+# Sourced before xws switches away from this workspace.
+# Undo changes made by this workspace's activate hook here.

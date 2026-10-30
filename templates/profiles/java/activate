@@ -1,0 +1,48 @@
+case "$(uname -s)" in
+  Darwin)
+    _xws_java_home=""
+    if [[ -x /usr/libexec/java_home ]]; then
+      _xws_java_home="$(/usr/libexec/java_home 2>/dev/null)" || _xws_java_home=""
+    fi
+    ;;
+  Linux)
+    _xws_java_home=""
+    _xws_java_bin="$(command -v java 2>/dev/null)" || _xws_java_bin=""
+    if [[ -n "$_xws_java_bin" ]]; then
+      _xws_java_real="$(readlink -f "$_xws_java_bin" 2>/dev/null)" || _xws_java_real=""
+      if [[ -n "$_xws_java_real" ]]; then
+        _xws_java_home="${_xws_java_real%/bin/java}"
+        if [[ "$_xws_java_home" == "$_xws_java_real" || ! -d "$_xws_java_home" ]]; then
+          _xws_java_home=""
+        fi
+      fi
+    fi
+    ;;
+  *)
+    printf 'xws java profile: unsupported operating system: %s\n' "$(uname -s)" >&2
+    return 1
+    ;;
+esac
+
+if [[ -z "$_xws_java_home" ]]; then
+  printf 'xws java profile: no JDK found; Java environment setup skipped\n' >&2
+  unset _xws_java_home _xws_java_bin _xws_java_real
+  return 0
+fi
+
+_XWS_JAVA_PREVIOUS_HOME_SET="${JAVA_HOME+x}"
+_XWS_JAVA_PREVIOUS_HOME="${JAVA_HOME-}"
+if _xws_var_is_exported JAVA_HOME; then
+  _XWS_JAVA_PREVIOUS_HOME_EXPORTED=1
+else
+  _XWS_JAVA_PREVIOUS_HOME_EXPORTED=0
+fi
+_XWS_JAVA_ACTIVE_HOME="$_xws_java_home"
+_XWS_JAVA_PATH_ADDED=0
+JAVA_HOME="$_xws_java_home"
+export JAVA_HOME
+case ":${PATH-}:" in
+  *":$JAVA_HOME/bin:"*) ;;
+  *) PATH="$JAVA_HOME/bin${PATH:+:$PATH}"; export PATH; _XWS_JAVA_PATH_ADDED=1 ;;
+esac
+unset _xws_java_home _xws_java_bin _xws_java_real

@@ -1,0 +1,512 @@
+#!/bin/sh
+# shellcheck shell=dash
+# `local` is a common shell extension; use typeset where it is unavailable.
+
+has_local() {
+  local _has_local
+}
+
+has_local 2>/dev/null || alias local=typeset
+
+is_zsh() {
+  [ -n "${ZSH_VERSION-}" ]
+}
+
+is_zsh && setopt shwordsplit
+set -u
+
+script_path=$0
+if [ -f "$script_path" ]; then
+  script_dir=$(cd "$(dirname "$script_path")" && pwd)
+  source_root=$script_dir
+else
+  source_root=$PWD
+fi
+
+prefix=${XWS_INSTALL_PREFIX:-${HOME:?HOME must be set}/xws}
+release_base_url=${XWS_RELEASE_BASE_URL:-https://github.com/pre-cursor/xws/releases/latest/download}
+TEMP_DIR=
+
+cleanup_temporary_dir() {
+  if [ -n "$TEMP_DIR" ]; then
+    rm -rf "$TEMP_DIR"
+  fi
+}
+
+trap cleanup_temporary_dir 0
+trap 'exit 1' HUP INT TERM
+
+usage() {
+  cat <<'EOF'
+Usage:
+  xws-install install [--latest] [--prefix DIR] [--artifact-dir DIR] [--debug|--release]
+  xws-install uninstall [--prefix DIR]
+  xws-install init bash|zsh [--prefix DIR] [--file FILE]
+
+Use --latest to download and install the latest matching GitHub release.
+Without --latest, install uses a local build or an artifact tree containing
+bin/xws-picker, share/xws/script, and share/xws/templates. The prefix defaults
+to XWS_INSTALL_PREFIX or $HOME/xws; --prefix overrides both.
+EOF
+}
+
+fail() {
+  printf 'xws-install: %s\n' "$*" >&2
+  exit 1
+}
+
+normalize_prefix() {
+  case "$prefix" in
+    /*) ;;
+    *) prefix=$PWD/$prefix ;;
+  esac
+}
+
+ensure_safe_prefix_tree() {
+  local relative
+  local install_path
+  for relative in bin share share/xws share/xws/script share/xws/templates; do
+    install_path=$prefix/$relative
+    if [ -L "$install_path" ]; then
+      fail "refusing to use symbolic-link install path: $install_path"
+    fi
+    if [ -e "$install_path" ] && [ ! -d "$install_path" ]; then
+      fail "install path is not a directory: $install_path"
+    fi
+  done
+}
+
+ensure_temp_dir() {
+  if [ -z "$TEMP_DIR" ]; then
+    TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/xws-install.XXXXXX") ||
+      fail "cannot create temporary directory"
+  fi
+}
+
+read_manifest() {
+  local manifest
+  local entry
+  manifest=$prefix/share/xws/.xws-install-manifest
+  [ -f "$manifest" ] && [ ! -L "$manifest" ] ||
+    fail "no regular xws install manifest at $manifest"
+
+  entry=
+  while IFS= read -r entry || [ -n "$entry" ]; do
+    [ -n "$entry" ] || fail "invalid empty entry in $manifest"
+    case "$entry" in
+      bin/xws-picker|bin/xws-install|share/xws/script/*|share/xws/templates/*) ;;
+      *) fail "unsafe entry in $manifest: $entry" ;;
+    esac
+    case "/$entry/" in
+      *//*|*/./*|*/../*) fail "unsafe entry in $manifest: $entry" ;;
+    esac
+    entry=
+  done < "$manifest"
+  grep -F -x 'bin/xws-picker' "$manifest" >/dev/null ||
+    fail "invalid install manifest; missing bin/xws-picker"
+}
+
+remove_managed_files() {
+  local manifest
+  local entry
+  local install_path
+  manifest=$prefix/share/xws/.xws-install-manifest
+  read_manifest
+  entry=
+  while IFS= read -r entry || [ -n "$entry" ]; do
+    install_path=$prefix/$entry
+    if [ -d "$install_path" ] && [ ! -L "$install_path" ]; then
+      fail "managed path is a directory; refusing to remove it: $install_path"
+    fi
+    entry=
+  done < "$manifest"
+  entry=
+  while IFS= read -r entry || [ -n "$entry" ]; do
+    install_path=$prefix/$entry
+    rm -f "$install_path"
+    entry=
+  done < "$manifest"
+}
+
+parse_prefix() {
+  shift
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --prefix)
+        [ "$#" -ge 2 ] || fail "--prefix requires a directory"
+        [ -n "$2" ] || fail "--prefix requires a non-empty directory"
+        prefix=$2
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        fail "unexpected argument: $1"
+        ;;
+    esac
+  done
+  normalize_prefix
+  ensure_safe_prefix_tree
+}
+
+install_local() {
+  local artifact_dir
+  local build_kind
+  local latest
+  local stage
+  local picker
+  local manifest
+  local entry
+  local install_path
+  artifact_dir=
+  build_kind=debug
+  latest=0
+  shift
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --latest)
+        latest=1
+        shift
+        ;;
+      --prefix)
+        [ "$#" -ge 2 ] || fail "--prefix requires a directory"
+        [ -n "$2" ] || fail "--prefix requires a non-empty directory"
+        prefix=$2
+        shift 2
+        ;;
+      --artifact-dir)
+        [ "$#" -ge 2 ] || fail "--artifact-dir requires a directory"
+        [ -n "$2" ] || fail "--artifact-dir requires a non-empty directory"
+        artifact_dir=$2
+        shift 2
+        ;;
+      --debug)
+        build_kind=debug
+        shift
+        ;;
+      --release)
+        build_kind=release
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        fail "unexpected argument: $1"
+        ;;
+    esac
+  done
+  normalize_prefix
+  ensure_safe_prefix_tree
+
+  if [ "$latest" -eq 1 ]; then
+    [ -z "$artifact_dir" ] && [ "$build_kind" = debug ] ||
+      fail "--latest cannot be combined with --artifact-dir, --debug, or --release"
+    install_latest
+    return
+  fi
+
+  ensure_temp_dir
+  stage=$TEMP_DIR/stage
+  mkdir -p "$stage/bin" "$stage/share/xws"
+  if [ -z "$artifact_dir" ] && [ ! -f "$source_root/picker/Cargo.toml" ]; then
+    artifact_dir=$source_root
+  fi
+  if [ -n "$artifact_dir" ]; then
+    [ -x "$artifact_dir/bin/xws-picker" ] ||
+      fail "artifact is missing executable bin/xws-picker: $artifact_dir"
+    [ -d "$artifact_dir/share/xws/script" ] ||
+      fail "artifact is missing share/xws/script: $artifact_dir"
+    [ -d "$artifact_dir/share/xws/templates" ] ||
+      fail "artifact is missing share/xws/templates: $artifact_dir"
+    cp -p "$artifact_dir/bin/xws-picker" "$stage/bin/xws-picker"
+    cp -R "$artifact_dir/share/xws/script" "$stage/share/xws/"
+    cp -R "$artifact_dir/share/xws/templates" "$stage/share/xws/"
+  else
+    picker=$source_root/picker/target/$build_kind/xws-picker
+    [ -x "$picker" ] ||
+      fail "local $build_kind picker not found; build it with cargo build --manifest-path '$source_root/picker/Cargo.toml' --$build_kind"
+    cp -p "$picker" "$stage/bin/xws-picker"
+    mkdir -p "$stage/share/xws/script"
+    cp -p "$source_root/script/xws-common.sh" \
+      "$source_root/script/xws.bash" \
+      "$source_root/script/xws.zsh" "$stage/share/xws/script/"
+    cp -R "$source_root/templates" "$stage/share/xws/"
+  fi
+
+  [ -f "$stage/share/xws/script/xws-common.sh" ] ||
+    fail "artifact is missing xws-common.sh"
+  [ -f "$stage/share/xws/script/xws.bash" ] ||
+    fail "artifact is missing xws.bash"
+  [ -f "$stage/share/xws/script/xws.zsh" ] ||
+    fail "artifact is missing xws.zsh"
+  [ -d "$stage/share/xws/templates/profiles/default" ] ||
+    fail "artifact is missing default profile templates"
+
+  local links
+  links=$(find "$stage/bin" "$stage/share/xws/script" \
+    "$stage/share/xws/templates" -type l -print) ||
+    fail "cannot inspect staged artifact"
+  [ -z "$links" ] ||
+    fail "artifact contains symbolic links; only regular files are supported"
+
+  (
+    cd "$stage" || exit 1
+    find bin/xws-picker share/xws/script share/xws/templates -type f -print |
+      LC_ALL=C sort
+  ) > "$stage/.xws-install-manifest" ||
+    fail "cannot create install manifest"
+
+  mkdir -p "$prefix/share/xws"
+  manifest=$prefix/share/xws/.xws-install-manifest
+  if [ -e "$manifest" ] || [ -L "$manifest" ]; then
+    read_manifest
+  fi
+
+  entry=
+  while IFS= read -r entry || [ -n "$entry" ]; do
+    install_path=$prefix/$entry
+    if [ -e "$install_path" ] || [ -L "$install_path" ]; then
+      if [ ! -f "$manifest" ] ||
+        ! grep -F -x "$entry" "$manifest" >/dev/null; then
+        fail "unmanaged file already exists; refusing to overwrite: $install_path"
+      fi
+    fi
+    entry=
+  done < "$stage/.xws-install-manifest"
+
+  if [ -f "$manifest" ]; then
+    remove_managed_files
+  fi
+
+  mkdir -p "$prefix/bin" "$prefix/share/xws"
+  cp -p "$stage/bin/xws-picker" "$prefix/bin/xws-picker"
+  cp -R "$stage/share/xws/script" "$prefix/share/xws/"
+  cp -R "$stage/share/xws/templates" "$prefix/share/xws/"
+  cp -p "$stage/.xws-install-manifest" "$manifest"
+  printf 'Installed xws under %s\n' "$prefix"
+}
+
+install_artifact() {
+  local artifact_dir
+  artifact_dir=$1
+  install_local install --artifact-dir "$artifact_dir" --prefix "$prefix"
+}
+
+install_latest() {
+  local os
+  local machine
+  local target
+  local archive_name
+  local archive
+  local checksums
+  local expected
+  local actual
+  local unpacked
+  local listing
+  local details
+  os=$(uname -s) || fail "cannot detect operating system"
+  machine=$(uname -m) || fail "cannot detect machine architecture"
+  case "$os:$machine" in
+    Darwin:arm64|Darwin:aarch64)
+      target=aarch64-apple-darwin
+      ;;
+    Darwin:x86_64)
+      target=x86_64-apple-darwin
+      ;;
+    Linux:x86_64|Linux:amd64)
+      target=x86_64-unknown-linux-gnu
+      ;;
+    *)
+      fail "no published xws release for $os/$machine"
+      ;;
+  esac
+
+  command -v curl >/dev/null 2>&1 || fail "curl is required to download xws"
+  command -v tar >/dev/null 2>&1 || fail "tar is required to unpack xws"
+  if [ "$os" = Darwin ]; then
+    command -v shasum >/dev/null 2>&1 || fail "shasum is required to verify xws"
+  else
+    command -v sha256sum >/dev/null 2>&1 ||
+      fail "sha256sum is required to verify xws"
+  fi
+
+  ensure_temp_dir
+  archive_name=xws-$target.tar.gz
+  archive=$TEMP_DIR/$archive_name
+  checksums=$TEMP_DIR/SHA256SUMS.txt
+  printf 'Downloading xws for %s/%s...\n' "$os" "$machine"
+  curl -fLsS --retry 3 --connect-timeout 15 --max-time 300 \
+    -o "$archive" "$release_base_url/$archive_name" ||
+    fail "could not download $archive_name from $release_base_url"
+  curl -fLsS --retry 3 --connect-timeout 15 --max-time 60 \
+    -o "$checksums" "$release_base_url/SHA256SUMS.txt" ||
+    fail "could not download release checksums from $release_base_url"
+
+  expected=$(awk -v name="$archive_name" '
+    $2 == name {
+      count++
+      if ($1 ~ /^[[:xdigit:]][[:xdigit:]]*$/ && length($1) == 64) value=$1
+      else invalid=1
+    }
+    END {
+      if (count != 1 || invalid) exit 1
+      print value
+    }
+  ' "$checksums") || fail "release checksums do not contain one valid entry for $archive_name"
+  if [ "$os" = Darwin ]; then
+    actual=$(shasum -a 256 "$archive" | awk '{ print $1 }') ||
+      fail "could not calculate archive checksum"
+  else
+    actual=$(sha256sum "$archive" | awk '{ print $1 }') ||
+      fail "could not calculate archive checksum"
+  fi
+  [ "$actual" = "$expected" ] ||
+    fail "checksum verification failed for $archive_name"
+
+  listing=$TEMP_DIR/archive-list
+  details=$TEMP_DIR/archive-details
+  tar -tzf "$archive" > "$listing" ||
+    fail "cannot list release archive"
+  awk '
+    /^\// || /(^|\/)\.\.(\/|$)/ { exit 1 }
+    {
+      path = $0
+      sub(/^\.\//, "", path)
+      if (path !~ /^xws(\/|$)/) exit 1
+    }
+  ' "$listing" || fail "release archive contains an unexpected path"
+  tar -tvzf "$archive" > "$details" ||
+    fail "cannot inspect release archive"
+  awk '
+    substr($0, 1, 1) != "-" && substr($0, 1, 1) != "d" { exit 1 }
+  ' "$details" || fail "release archive contains a link or unsupported file type"
+
+  unpacked=$TEMP_DIR/unpacked
+  mkdir -p "$unpacked"
+  tar -xzf "$archive" -C "$unpacked" ||
+    fail "cannot unpack release archive"
+  [ -x "$unpacked/xws/bin/xws-picker" ] ||
+    fail "release archive is missing xws/bin/xws-picker"
+  install_artifact "$unpacked/xws"
+}
+
+uninstall_local() {
+  parse_prefix "$@"
+  remove_managed_files
+  rm -f "$prefix/share/xws/.xws-install-manifest"
+  printf 'Uninstalled xws from %s\n' "$prefix"
+}
+
+shell_quote() {
+  printf "'"
+  sed "s/'/'\\\\''/g"
+  printf "'"
+}
+
+initialize_shell() {
+  local shell_name
+  local startup_file
+  local startup_name
+  local source_path
+  local quoted_path
+  local block
+  local begin_marker
+  local end_marker
+  local begin_count
+  local end_count
+  local existing_block
+  shell_name=${1:-}
+  [ "$#" -gt 0 ] && shift
+  startup_file=
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --prefix)
+        [ "$#" -ge 2 ] || fail "--prefix requires a directory"
+        [ -n "$2" ] || fail "--prefix requires a non-empty directory"
+        prefix=$2
+        shift 2
+        ;;
+      --file)
+        [ "$#" -ge 2 ] || fail "--file requires a path"
+        [ -n "$2" ] || fail "--file requires a non-empty path"
+        startup_file=$2
+        shift 2
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        fail "unexpected argument: $1"
+        ;;
+    esac
+  done
+  normalize_prefix
+
+  case "$shell_name" in
+    bash) startup_name=.bashrc ;;
+    zsh) startup_name=.zshrc ;;
+    *) fail "init requires bash or zsh" ;;
+  esac
+  [ -n "$startup_file" ] || startup_file=${HOME:?HOME must be set}/$startup_name
+  [ -f "$prefix/share/xws/script/xws.$shell_name" ] ||
+    fail "no installed $shell_name integration under $prefix"
+
+  source_path=$prefix/share/xws/script/xws.$shell_name
+  quoted_path=$(printf '%s' "$source_path" | shell_quote) ||
+    fail "cannot quote integration path"
+  begin_marker='# >>> xws initialization >>>'
+  end_marker='# <<< xws initialization <<<'
+  block=$(printf '%s\n' \
+    "$begin_marker" \
+    "if [ -f $quoted_path ]; then" \
+    "  . $quoted_path" \
+    'fi' \
+    "$end_marker")
+
+  mkdir -p "$(dirname "$startup_file")"
+  touch "$startup_file"
+  begin_count=$(grep -F -x -c "$begin_marker" "$startup_file" || :)
+  end_count=$(grep -F -x -c "$end_marker" "$startup_file" || :)
+  if [ "$begin_count" -ne 0 ] || [ "$end_count" -ne 0 ]; then
+    if [ "$begin_count" -eq 1 ] && [ "$end_count" -eq 1 ]; then
+      existing_block=$(awk -v begin="$begin_marker" -v end="$end_marker" '
+        $0 == begin { copying = 1 }
+        copying { print }
+        $0 == end && copying { exit }
+      ' "$startup_file")
+      [ "$existing_block" = "$block" ] ||
+        fail "startup file already has a different xws block: $startup_file"
+      printf 'xws startup block already present in %s\n' "$startup_file"
+      return
+    fi
+    fail "incomplete or duplicate xws markers in $startup_file"
+  fi
+
+  printf '\n%s\n' "$block" >> "$startup_file"
+  printf 'Added xws startup block to %s\n' "$startup_file"
+}
+
+command=${1:-}
+case "$command" in
+  install)
+    install_local "$@"
+    ;;
+  uninstall)
+    uninstall_local "$@"
+    ;;
+  init)
+    shift
+    initialize_shell "$@"
+    ;;
+  -h|--help|'')
+    usage
+    ;;
+  *)
+    fail "unknown command: $command"
+    ;;
+esac
