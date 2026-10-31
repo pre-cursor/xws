@@ -29,6 +29,46 @@ struct FeatureManifest {
     with_profiles: Option<Vec<String>>,
 }
 
+/// The live activation context as observed by the shell.
+///
+/// This is a snapshot of the `XWS_WORKSPACE_PATH` environment variable: the
+/// directory the shell currently considers active. It is read once at the
+/// process edge and injected into the store methods that need it, rather than
+/// read from `std::env` at call time, so the active-workspace guard stays a
+/// single, testable policy.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ActiveContext {
+    workspace_path: Option<PathBuf>,
+}
+
+impl ActiveContext {
+    /// Read the active context from the environment.
+    pub fn from_env() -> Self {
+        Self {
+            workspace_path: std::env::var_os("XWS_WORKSPACE_PATH").map(PathBuf::from),
+        }
+    }
+
+    /// Is `path` the currently active workspace directory?
+    ///
+    /// Compares the two paths by their canonical (real) form, so a trailing
+    /// slash, `.`/`..` components, or a symlinked `prefix` do not let an
+    /// equivalent `XWS_WORKSPACE_PATH` slip past the "deactivate before
+    /// remove/move" guard. If either path cannot be canonicalized (for example
+    /// the active path is dangling), fall back to a lexical comparison so a
+    /// transient filesystem error never blocks the operation; this is a UX
+    /// guard, not a security boundary.
+    pub fn is_active(&self, path: &Path) -> bool {
+        let Some(active) = &self.workspace_path else {
+            return false;
+        };
+        match (fs::canonicalize(path), fs::canonicalize(active)) {
+            (Ok(canonical_path), Ok(canonical_active)) => canonical_path == canonical_active,
+            _ => Path::new(active) == path,
+        }
+    }
+}
+
 pub struct WorkspaceStore {
     prefix: PathBuf,
 }
@@ -273,40 +313,42 @@ impl WorkspaceStore {
         Ok(())
     }
 
-    pub fn remove_many(&self, names: &[String]) -> bool {
-        let mut failed = false;
-        for name in names {
-            let path = match self.workspace_path(name) {
-                Ok(path) => path,
-                Err(_) => {
-                    eprintln!("xws rm: {name}: No such workspace or invalid workspace name");
-                    failed = true;
-                    continue;
+    /// Attempt to remove each workspace by name, returning one result per
+    /// input name, in order. A result is `Err` when the name does not
+    /// resolve, when the workspace is the active one, or when the directory
+    /// cannot be removed. Presentation (printing and exit-code mapping) is
+    /// left to the caller so the per-item outcome is not collapsed.
+    pub fn remove_many(
+        &self,
+        active: &ActiveContext,
+        names: &[String],
+    ) -> Vec<Result<(), Box<dyn Error>>> {
+        names
+            .iter()
+            .map(|name| {
+                let path = self.workspace_path(name)?;
+                if active.is_active(&path) {
+                    return Err("Deactivate the workspace before removing it"
+                        .to_string()
+                        .into());
                 }
-            };
-            if let Some(active) = std::env::var_os("XWS_WORKSPACE_PATH")
-                && Path::new(&active) == path
-            {
-                eprintln!("xws rm: {name}: Deactivate the workspace before removing it");
-                failed = true;
-                continue;
-            }
-            if let Err(error) = fs::remove_dir_all(&path) {
-                eprintln!("xws rm: {name}: {error}");
-                failed = true;
-            }
-        }
-        failed
+                fs::remove_dir_all(&path)?;
+                Ok(())
+            })
+            .collect()
     }
 
-    pub fn move_workspace(&self, source: &str, target: &str) -> Result<(), Box<dyn Error>> {
+    pub fn move_workspace(
+        &self,
+        active: &ActiveContext,
+        source: &str,
+        target: &str,
+    ) -> Result<(), Box<dyn Error>> {
         let source_path = self.workspace_path(source)?;
         validate_name(target)?;
         let target_path = self.workspaces_dir().join(target);
 
-        if let Some(active) = std::env::var_os("XWS_WORKSPACE_PATH")
-            && Path::new(&active) == source_path
-        {
+        if active.is_active(&source_path) {
             return Err("deactivate the source workspace before moving it".into());
         }
         if fs::symlink_metadata(&target_path).is_ok() {
@@ -690,6 +732,95 @@ mod tests {
     fn feature_manifest_rejects_unknown_fields() {
         assert!(toml::from_str::<FeatureManifest>("with-profile = \"java\"").is_err());
         assert!(toml::from_str::<FeatureManifest>("unknown = true").is_err());
+    }
+
+    #[test]
+    fn active_context_matches_equivalent_path_spellings() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = WorkspaceStore {
+            prefix: temp.path().to_path_buf(),
+        };
+        store.create("guard", &[], &[]).unwrap();
+        let workspace = store.workspace_path("guard").unwrap();
+
+        // A trailing-slash spelling of the active path must still match,
+        // since both sides are compared by their canonical form.
+        let trailing_slash = PathBuf::from(format!("{}/", workspace.to_string_lossy()));
+        let active = ActiveContext {
+            workspace_path: Some(trailing_slash),
+        };
+        assert!(
+            active.is_active(&workspace),
+            "trailing-slash active path should match"
+        );
+        assert!(
+            !ActiveContext::default().is_active(&workspace),
+            "no active context should never match"
+        );
+    }
+
+    #[test]
+    fn remove_refuses_active_workspace_set_via_trailing_slash() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = WorkspaceStore {
+            prefix: temp.path().to_path_buf(),
+        };
+        store.create("guard", &[], &[]).unwrap();
+        let workspace = store.workspace_path("guard").unwrap();
+
+        // Simulate a shell that stored an equivalent-but-differently-spelled
+        // active path; the guard must still fire.
+        let active = ActiveContext {
+            workspace_path: Some(PathBuf::from(format!("{}/", workspace.to_string_lossy()))),
+        };
+        assert!(
+            store
+                .remove_many(&active, &["guard".to_owned()])
+                .into_iter()
+                .any(|result| result.is_err())
+        );
+        assert!(workspace.exists(), "active workspace must not be removed");
+
+        // With no active context, the same removal succeeds.
+        assert!(
+            !store
+                .remove_many(&ActiveContext::default(), &["guard".to_owned()])
+                .into_iter()
+                .any(|result| result.is_err())
+        );
+        assert!(!workspace.exists());
+    }
+
+    #[test]
+    fn remove_reports_each_failure_independently() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = WorkspaceStore {
+            prefix: temp.path().to_path_buf(),
+        };
+        store.create("keep", &[], &[]).unwrap();
+        store.create("remove-me", &[], &[]).unwrap();
+        let keep = store.workspace_path("keep").unwrap();
+        let remove_me = store.workspace_path("remove-me").unwrap();
+
+        // "keep" is active, "missing" does not exist, "remove-me" is removable.
+        let active = ActiveContext {
+            workspace_path: Some(keep.clone()),
+        };
+        let outcomes = store.remove_many(
+            &active,
+            &[
+                "keep".to_owned(),
+                "missing".to_owned(),
+                "remove-me".to_owned(),
+            ],
+        );
+
+        assert_eq!(outcomes.len(), 3, "one result per input name, in order");
+        assert!(outcomes[0].is_err(), "active workspace must fail");
+        assert!(outcomes[1].is_err(), "missing workspace must fail");
+        assert!(outcomes[2].is_ok(), "inactive workspace must be removed");
+        assert!(keep.exists(), "active workspace must not be removed");
+        assert!(!remove_me.exists(), "inactive workspace must be removed");
     }
 
     #[test]

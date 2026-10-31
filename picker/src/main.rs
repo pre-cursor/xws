@@ -1,15 +1,14 @@
-mod picker;
-mod session;
-mod workspace;
-
 use std::env;
 use std::error::Error;
 use std::process::ExitCode;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use session::{ActivationFrame, SessionStore};
-use workspace::WorkspaceStore;
+use xws_picker::kernel::picker;
+use xws_picker::kernel::session::{ActivationFrame, SessionStore};
+use xws_picker::kernel::workspace::{
+    ActiveContext, WorkspaceStore, validate_environment_name, validate_name,
+};
 
 type VariableRecord = (String, String, Option<String>);
 
@@ -185,7 +184,7 @@ fn run_workspace_command(
                 "push" => {
                     let id = required_arg(args.next(), "session id")?;
                     let workspace = required_arg(args.next(), "workspace name")?;
-                    workspace::validate_name(&workspace)?;
+                    validate_name(&workspace)?;
                     let workspace_path = required_arg(args.next(), "workspace path")?;
                     let return_dir = required_arg(args.next(), "return directory")?;
                     if args.next().is_some() {
@@ -297,7 +296,14 @@ fn run_workspace_command(
             if names.is_empty() {
                 return Err("usage: xws-picker remove <workspace ...>".into());
             }
-            let failed = store.remove_many(&names);
+            let active = ActiveContext::from_env();
+            let mut failed = false;
+            for (name, result) in names.iter().zip(store.remove_many(&active, &names)) {
+                if let Err(error) = result {
+                    eprintln!("xws rm: {name}: {error}");
+                    failed = true;
+                }
+            }
             if failed { Ok(1) } else { Ok(0) }
         }
         "move" | "mv" => {
@@ -306,7 +312,8 @@ fn run_workspace_command(
             if args.next().is_some() {
                 return Err("usage: xws-picker move <source> <target>".into());
             }
-            store.move_workspace(&source, &target)?;
+            let active = ActiveContext::from_env();
+            store.move_workspace(&active, &source, &target)?;
             println!("Moved workspace {source} to {target}");
             Ok(0)
         }
@@ -339,7 +346,7 @@ fn read_var_records() -> Result<Vec<VariableRecord>, Box<dyn Error>> {
         if fields.len() != 5 || fields[0] != "XWS/1" || fields[1] != "var" {
             return Err("invalid XWS/1 session input record".into());
         }
-        workspace::validate_environment_name(fields[2])?;
+        validate_environment_name(fields[2])?;
         if !seen.insert(fields[2].to_owned()) {
             return Err(format!("duplicate XWS/1 variable record '{}'", fields[2]).into());
         }

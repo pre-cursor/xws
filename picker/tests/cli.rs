@@ -529,7 +529,7 @@ fn move_and_remove_commands_enforce_workspace_rules() {
         .args(["remove", "renamed", "missing"])
         .output()
         .unwrap();
-    failed(removed, "No such workspace");
+    failed(removed, "workspace 'missing' does not exist");
     assert!(!prefix.join("workspaces/renamed").exists());
     assert!(prefix.join("workspaces/beta").is_dir());
 }
