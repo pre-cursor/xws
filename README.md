@@ -74,9 +74,11 @@ The picker uses the alternate screen by default. To choose a display, create
 screen_buffer = "inline" # or "alternate"
 ```
 
-For a temporary override, set `XWS_PICKER_DISPLAY=inline` or
-`XWS_PICKER_DISPLAY=alternate`. `xws list` marks the active workspace with
-`*`.
+For a temporary override, export `XWS_PICKER_DISPLAY=inline` or
+`XWS_PICKER_DISPLAY=alternate` (the picker is a separate process, so a
+non-exported shell variable is not seen by it). It can also be set for a single
+invocation as `XWS_PICKER_DISPLAY=inline xws`. `xws list` marks the active
+workspace with `*`.
 
 ## License
 

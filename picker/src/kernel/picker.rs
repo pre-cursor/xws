@@ -239,10 +239,14 @@ fn move_selection(selected: Option<usize>, len: usize, direction: Direction) -> 
 }
 
 fn center_active(index: usize, first: usize, len: usize, height: usize) -> usize {
-    let target_row = height / 2;
-    let proposed = index.saturating_sub(target_row);
     let max_first = len.saturating_sub(height);
-    proposed.clamp(0, max_first).max(first.min(max_first))
+    let centered = index.saturating_sub(height / 2);
+    // Center the selection on the viewport, but keep the scroll sticky: never
+    // scroll backward past the current `first`, and always stay within the
+    // valid first-row range. The final `clamp` owns the range invariant, so a
+    // future tweak to the centering math cannot let the view scroll past the
+    // end of the list.
+    centered.max(first).clamp(0, max_first)
 }
 
 fn keep_visible(
@@ -356,6 +360,25 @@ mod tests {
         assert_eq!(keep_visible(8, 0, 20, 6, Direction::Down), 4);
         assert_eq!(keep_visible(3, 5, 20, 6, Direction::Up), 1);
         assert_eq!(keep_visible(19, 18, 20, 6, Direction::Down), 14);
+    }
+
+    #[test]
+    fn center_active_centers_and_stays_within_range() {
+        // First display: center the selection on a viewport that fits.
+        assert_eq!(center_active(10, 0, 20, 6), 7);
+
+        // Sticky: centering would scroll backward past the current `first`, so
+        // it is kept in place.
+        assert_eq!(center_active(3, 5, 20, 6), 5);
+
+        // Load-bearing case: a window shrink leaves a stored `first` beyond the
+        // new `max_first`; the terminal `clamp` pulls it back to the end of the
+        // list rather than scrolling past it.
+        assert_eq!(center_active(19, 15, 20, 6), 14);
+
+        // Never leaves the valid first-row range, even at the top.
+        assert_eq!(center_active(0, 0, 20, 6), 0);
+        assert_eq!(center_active(2, 0, 20, 6), 0);
     }
 
     #[test]
