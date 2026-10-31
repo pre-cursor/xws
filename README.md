@@ -1,4 +1,8 @@
-# xws
+
+<h1>
+  <img src="./logo.svg" align="left" height="40px" alt="xws logo" style="filter: invert(50%) sepia(70%) saturate(200%) hue-rotate(45deg) brightness(120%) contrast(120%);"/>
+  <span>xws</span>
+</h1>
 
 **Workspaces that feel native to your shell.**
 
