@@ -1,9 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 225 225" width="225" height="225">
-  <g fill="#000000">
-    <!-- Left Vertical Bar -->
-    <rect x="49.5" y="56.5" width="13" height="111" rx="0.5" />
-    
-    <!-- Left Arrow Symbol -->
-    <path d="M 129.5 57.5 L 74 112 L 129.5 166.5 L 138.5 157.5 L 100 119 L 175 119 L 175 105 L 100 105 L 138.5 66.5 Z" />
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 225 225" width="225" height="225">
+  <g fill="currentColor">
+    <!-- Left Vertical Bar Path -->
+    <path
+      d="M 49.5 56.5 L 62.5 56.5 L 62.5 167.5 L 49.5 167.5 Z"
+      style="fill:#ff5a5f;stroke:none;stroke-width:1.32292;stroke-linecap:square;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:markers stroke fill"
+    />
+
+    <!-- Arrow Symbol Path -->
+    <path
+      d="M 129.5 57.5 L 74 112 L 129.5 166.5 L 138.5 157.5 L 100 119 L 175 119 L 175 105 L 100 105 L 138.5 66.5 Z"
+      style="fill:#ff5a5f;stroke:none;stroke-width:1.32292;stroke-linecap:square;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;paint-order:markers stroke fill"
+    />
   </g>
 </svg>
