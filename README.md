@@ -35,6 +35,12 @@ Traditional tools either force you into sluggish nested subshells (`nix-shell`, 
 
 ---
 
+### Demo
+
+![Demo](demos/demo.gif)
+
+---
+
 ### Supported Platforms
 
 * **macOS** (Intel and Apple silicon)
