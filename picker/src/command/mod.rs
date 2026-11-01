@@ -29,7 +29,7 @@ pub enum PickerSubcommand {
     #[command(about = "Print a workspace's path")]
     Path(path_command::PathArgs),
 
-    #[command(about = "Pick a workspace")]
+    #[command(about = "Pick a workspace", hide = true)]
     Pick(pick_command::PickArgs),
 
     #[command(about = "Remove a workspace", visible_alias = "rm")]
@@ -46,10 +46,10 @@ pub enum PickerSubcommand {
     Profiles(profiles_command::ProfilesArgs),
 
     // --- Shell Integration & Protocol ---
-    #[command(about = "Manage protocols")]
+    #[command(about = "Manage protocols", hide = true)]
     Protocol(protocol_command::ProtocolArgs),
 
-    #[command(about = "Manage sessions")]
+    #[command(about = "Manage sessions", hide = true)]
     Session(session_command::SessionArgs),
 
     // --- General ---

@@ -512,7 +512,7 @@ xws() {
       fi
       _xws_cli "$_xws_local_command"
       ;;
-    which|profiles|features|version|--version|help|-h|--help)
+    path|which|profiles|features|version|--version|help|-h|--help)
       _xws_cli "$@"
       ;;
     *)
