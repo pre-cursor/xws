@@ -1,11 +1,12 @@
 [package]
 name = "xws-picker"
-version = "1.3.2"
+version = "1.3.3"
 license = "MIT"
 edition = "2024"
 
 [dependencies]
 base64 = "0.23"
+clap = { version = "4", features = ["derive"] }
 crossterm = "0.29"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

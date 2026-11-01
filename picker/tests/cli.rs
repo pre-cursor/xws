@@ -66,7 +66,7 @@ fn create_list_path_and_environment_protocol_work_end_to_end() {
             .args(["list", "demo"])
             .output()
             .unwrap(),
-        "usage: xws-picker list",
+        "unexpected argument 'demo",
     );
 
     let workspace_path = prefix.join("workspaces/demo");
@@ -545,14 +545,14 @@ fn command_usage_and_invalid_configuration_return_errors() {
             .args(["path"])
             .output()
             .unwrap(),
-        "missing workspace name",
+        "the following required arguments were not provided",
     );
     failed(
         picker(&prefix, &state_home)
             .args(["protocol", "unknown"])
             .output()
             .unwrap(),
-        "usage: xws-picker protocol env|path|pick",
+        "unrecognized subcommand 'unknown'",
     );
     failed(
         picker(&prefix, &state_home)
@@ -611,7 +611,7 @@ fn version_is_available_from_picker_and_shell_function() {
         assert!(
             String::from_utf8(output.stdout)
                 .unwrap()
-                .starts_with("Usage: xws <command>")
+                .starts_with("Usage: xws <COMMAND>")
         );
     }
 
@@ -621,7 +621,12 @@ fn version_is_available_from_picker_and_shell_function() {
         .env_remove("XWS_PREFIX")
         .output()
         .unwrap();
-    failed(output, "usage: xws-picker help|--help|-h");
+    assert!(output.status.success());
+    assert!(
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("List workspaces")
+    );
 
     let bash_init = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../script/xws.bash");
     for command in ["version", "--version"] {
