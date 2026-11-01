@@ -154,8 +154,15 @@ workspaces and is restored layer by layer.
 
 Variable names use the portable shell identifier syntax. `PATH`, `XWS_*`, and
 shell-control variables such as `IFS`, `HOME`, `PWD`, and `ZDOTDIR` are
-reserved. The `_XWS_*` and `_xws_*` prefixes are reserved for integration
-internals. xws manages each workspace's `bin/` PATH entry itself.
+reserved, as are variables that run code at prompt time or alter the dynamic
+loader: `PROMPT_COMMAND`, `PS0`, `PS1`, `PS2`, `PS4`, `PYTHONSTARTUP`,
+`HISTFILE`, and the `LD_*`, `DYLD_*`, and `BASH_FUNC_*` families. The `_XWS_*`
+and `_xws_*` prefixes are reserved for integration internals. xws manages each
+workspace's `bin/` PATH entry itself. Toolchain and language variables such as
+`CC`, `PYTHONPATH`, or `GOPATH` remain allowed. The same check is applied to
+names read back from session files. It restricts only the declarative `bin/env`
+channel; `activate` and `deactivate` hooks are shell scripts and are not
+covered, so it is hardening and not a sandbox.
 
 Session state may contain sensitive prior environment values. Keep
 `XWS_STATE_HOME` in a private location and do not share session files.

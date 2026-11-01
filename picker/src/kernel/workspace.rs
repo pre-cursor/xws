@@ -576,6 +576,44 @@ pub fn validate_feature_name(name: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// Names that change how a shell or the dynamic loader behaves. Blocked as a
+/// floor for `bin/env` and for restored session frames.
+const RESERVED_ENVIRONMENT_NAMES: &[&str] = &[
+    // Shell state and startup
+    "PATH",
+    "HOME",
+    "PWD",
+    "OLDPWD",
+    "IFS",
+    "SHLVL",
+    "SHELL",
+    "CDPATH",
+    "ENV",
+    "BASH_ENV",
+    "BASHOPTS",
+    "SHELLOPTS",
+    "ZDOTDIR",
+    // Code that runs at prompt time or on interpreter startup
+    "PROMPT_COMMAND",
+    "PS0",
+    "PS1",
+    "PS2",
+    "PS4",
+    "PYTHONSTARTUP",
+    // History
+    "HISTFILE",
+];
+
+/// Whole families, so new loader variables need no list update.
+const RESERVED_ENVIRONMENT_PREFIXES: &[&str] = &[
+    "XWS_",
+    "_XWS_",
+    "_xws_",      // xws internals
+    "LD_",        // ELF loader (LD_PRELOAD, LD_LIBRARY_PATH, ...)
+    "DYLD_",      // macOS loader (DYLD_INSERT_LIBRARIES, ...)
+    "BASH_FUNC_", // exported bash functions
+];
+
 pub fn validate_environment_name(name: &str) -> Result<(), Box<dyn Error>> {
     let mut chars = name.chars();
     let valid_first = chars
@@ -583,25 +621,10 @@ pub fn validate_environment_name(name: &str) -> Result<(), Box<dyn Error>> {
         .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic());
     if !valid_first
         || !chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
-        || matches!(
-            name,
-            "PATH"
-                | "HOME"
-                | "PWD"
-                | "OLDPWD"
-                | "IFS"
-                | "SHLVL"
-                | "SHELL"
-                | "CDPATH"
-                | "ENV"
-                | "BASH_ENV"
-                | "BASHOPTS"
-                | "SHELLOPTS"
-                | "ZDOTDIR"
-        )
-        || name.starts_with("XWS_")
-        || name.starts_with("_XWS_")
-        || name.starts_with("_xws_")
+        || RESERVED_ENVIRONMENT_NAMES.contains(&name)
+        || RESERVED_ENVIRONMENT_PREFIXES
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
     {
         return Err(format!("invalid or reserved environment variable name: '{name}'").into());
     }
@@ -869,5 +892,39 @@ mod tests {
         assert!(validate_environment_name("XWS_WORKSPACE").is_err());
         assert!(validate_environment_name("_xws_local_name").is_err());
         assert!(validate_environment_name("PATH").is_err());
+    }
+
+    #[test]
+    fn loader_and_prompt_hook_variables_are_reserved() {
+        for name in [
+            "PATH",
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "DYLD_INSERT_LIBRARIES",
+            "DYLD_FRAMEWORK_PATH",
+            "BASH_FUNC_foo",
+            "PROMPT_COMMAND",
+            "PS1",
+            "PYTHONSTARTUP",
+            "HISTFILE",
+        ] {
+            assert!(
+                validate_environment_name(name).is_err(),
+                "{name} should be reserved"
+            );
+        }
+        for name in [
+            "GOPATH",
+            "RUST_LOG",
+            "CC",
+            "PYTHONPATH",
+            "TMPDIR",
+            "LDFLAGS",
+        ] {
+            assert!(
+                validate_environment_name(name).is_ok(),
+                "{name} should be allowed"
+            );
+        }
     }
 }

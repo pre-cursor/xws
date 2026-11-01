@@ -160,8 +160,8 @@ For variables declared in `bin/env`, xws restores each variable's previous
 value when you deactivate. If it was unset before activation, it is unset
 again. This tracks only variables listed in `bin/env`, not arbitrary changes
 made by hooks. Values are literal: `$HOME` is not expanded, and commands are
-not executed. Names such as `PATH`, `HOME`, `PWD`, `IFS`, `ZDOTDIR`, and
-`XWS_*` are reserved.
+not executed. Names such as `PATH`, `HOME`, `PWD`, `IFS`, `ZDOTDIR`, `PS1`,
+`PROMPT_COMMAND`, `HISTFILE`, `XWS_*`, `LD_*`, and `DYLD_*` are reserved.
 
 If two stacked workspaces declare the same variable, each frame restores the
 value from the layer beneath it.
