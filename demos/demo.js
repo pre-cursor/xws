@@ -21,8 +21,16 @@ function ls() {
   typeCommand("xws ls", 1.5);
 }
 
-Application("Terminal").activate();
+const terminal = Application("Terminal");
+terminal.activate();
 delay(1.5);
+
+// General demo...
+
+const window = terminal.windows[0];
+savedTitle = window.customTitle;
+window.customTitle = "XWS Navigational Demo";
+window.titleDisplaysCustomTitle = true;
 
 sys.keyCode(RETURN);
 delay(1.5);
@@ -81,3 +89,60 @@ ls();
 typeCommand("xws rm foo", 0.5);
 
 ls();
+
+// Python isolation demo...
+
+window.customTitle = "XWS Python Isolation Demo";
+window.titleDisplaysCustomTitle = true;
+
+typeCommand("clear", 1.5);
+delay(1.5);
+
+sys.keyCode(RETURN);
+delay(1.5);
+
+typeCommand("xws create foo --profile python", 1.0);
+typeCommand("xws create bar --profile python", 0.5);
+
+ls();
+
+sys.keyCode(RETURN);
+delay(1.5);
+
+typeCommand("python -c \"import sys; print(f'Hello Python World from {sys.executable}')\"", 0.5);
+
+sys.keyCode(RETURN);
+delay(1.5);
+
+typeCommand("xws push foo", 1.0);
+typeCommand("python -c \"import sys; print(f'Hello Python World from {sys.executable}')\"", 0.5);
+
+sys.keyCode(RETURN);
+delay(1.5);
+
+typeCommand("xws push bar", 1.0);
+typeCommand("python -c \"import sys; print(f'Hello Python World from {sys.executable}')\"", 0.5);
+
+sys.keyCode(RETURN);
+delay(1.5);
+
+typeCommand("xws pop", 0.5);
+typeCommand("python -c \"import sys; print(f'Hello PythonWorld from {sys.executable}')\"", 0.5);
+
+sys.keyCode(RETURN);
+delay(1.5);
+
+typeCommand("xws pop", 0.5);
+typeCommand("python -c \"import sys; print(f'Hello Python World from {sys.executable}')\"", 0.5);
+
+sys.keyCode(RETURN);
+delay(1.5);
+
+typeCommand("xws rm foo", 1.0);
+typeCommand("xws rm bar", 0.5);
+
+sys.keyCode(RETURN);
+delay(1.5);
+
+window.customTitle = savedTitle;
+window.titleDisplaysCustomTitle = false;
