@@ -516,7 +516,23 @@ fn existing_regular_file(path: &Path) -> Result<Option<PathBuf>, Box<dyn Error>>
     }
 }
 
+/// Locate the packaged templates directory (the one containing `profiles/`
+/// and `features/`), in this order:
+///
+/// 1. `XWS_TEMPLATES_DIR`, used as-is; an invalid value is an error rather
+///    than a silent fall-through.
+/// 2. `<exe>/../share/xws/templates`.
+/// 3. `<repo>/templates` via `CARGO_MANIFEST_DIR`, debug builds only, so a
+///    release binary never embeds or trusts its build machine's source path.
 fn packaged_templates_root() -> Result<PathBuf, Box<dyn Error>> {
+    if let Some(value) = std::env::var_os("XWS_TEMPLATES_DIR") {
+        let root = PathBuf::from(value);
+        if !root.is_dir() {
+            return Err(format!("XWS_TEMPLATES_DIR is not a directory: {}", root.display()).into());
+        }
+        return Ok(root);
+    }
+
     let executable = std::env::current_exe()?;
     let installed_root = executable
         .parent()
@@ -526,9 +542,17 @@ fn packaged_templates_root() -> Result<PathBuf, Box<dyn Error>> {
         return Ok(root);
     }
 
-    Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("templates"))
+    #[cfg(debug_assertions)]
+    {
+        let checkout = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("templates");
+        if checkout.is_dir() {
+            return Ok(checkout);
+        }
+    }
+
+    Err("xws templates not found next to the binary; reinstall xws or set XWS_TEMPLATES_DIR".into())
 }
 
 pub fn validate_name(name: &str) -> Result<(), Box<dyn Error>> {

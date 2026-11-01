@@ -40,6 +40,43 @@ fn failed(output: Output, expected_message: &str) {
 }
 
 #[test]
+fn templates_dir_override_is_used_as_is_and_invalid_values_are_errors() {
+    let temp = tempdir().unwrap();
+    let prefix = temp.path().join("prefix");
+    let state_home = temp.path().join("state");
+    let repo_templates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../templates");
+
+    let profiles = successful(
+        picker(&prefix, &state_home)
+            .arg("profiles")
+            .env("XWS_TEMPLATES_DIR", &repo_templates)
+            .output()
+            .unwrap(),
+    );
+    assert!(profiles.lines().any(|line| line == "default"));
+
+    let empty = temp.path().join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    let none = successful(
+        picker(&prefix, &state_home)
+            .arg("profiles")
+            .env("XWS_TEMPLATES_DIR", &empty)
+            .output()
+            .unwrap(),
+    );
+    assert!(none.trim().is_empty());
+
+    failed(
+        picker(&prefix, &state_home)
+            .arg("profiles")
+            .env("XWS_TEMPLATES_DIR", temp.path().join("missing"))
+            .output()
+            .unwrap(),
+        "XWS_TEMPLATES_DIR is not a directory",
+    );
+}
+
+#[test]
 fn create_list_path_and_environment_protocol_work_end_to_end() {
     let temp = tempdir().unwrap();
     let prefix = temp.path().join("prefix");

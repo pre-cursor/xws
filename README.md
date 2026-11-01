@@ -135,6 +135,7 @@ xws pop
 | `XWS_PREFIX` | Base directory for workspace storage (workspaces live under `$XWS_PREFIX/workspaces`). |
 | `XWS_STATE_HOME` | Private session-state and configuration directory (defaults to `~/.xws`). |
 | `XWS_PICKER_DISPLAY` | Picker UI rendering mode: `alternate` (fullscreen buffer) or `inline`. |
+| `XWS_TEMPLATES_DIR` | Directory holding the packaged `profiles/` and `features/` (`share/xws/templates` when installed, `<repo>/templates` in a checkout). It only moves the packaged templates; user overrides in `$XWS_PREFIX/templates` are unaffected. Whatever it points at is copied into new workspaces and executed, so it is trusted like `XWS_PREFIX`: only set it to a location you control. |
 | `XWS_PICKER` | Custom path override for the `xws-picker` binary executable. |
 
 #### Persistent Display Preferences

@@ -219,7 +219,12 @@ profiles are in `templates/profiles/<name>/`, and features are in
 
 The CLI discovers available profiles and features by listing those directories.
 `xws profiles` and `xws features` show the discovered names. Packaged templates
-are installed under `share/xws/templates/`; user templates under
+are installed under `share/xws/templates/`. The packaged location is resolved
+from `XWS_TEMPLATES_DIR` (used as-is, and an invalid value is an error), then
+`<exe>/../share/xws/templates`, then, in debug builds only, the checkout's
+`templates/` directory. Release binaries never embed a source path. Because
+packaged templates are copied into workspaces and executed, `XWS_TEMPLATES_DIR`
+has the same trust level as `XWS_PREFIX`. User templates under
 `$XWS_PREFIX/templates/profiles/<name>/` or
 `$XWS_PREFIX/templates/features/<name>/` override matching packaged files.
 Overrides are resolved per file, so a user bundle can customize one file and
