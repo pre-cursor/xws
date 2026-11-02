@@ -326,6 +326,10 @@ install_latest() {
   esac
 
   command -v curl >/dev/null 2>&1 || fail "curl is required to download xws"
+  case $release_base_url in
+    https://*) ;;
+    *) fail "XWS_RELEASE_BASE_URL must start with https://" ;;
+  esac
   command -v tar >/dev/null 2>&1 || fail "tar is required to unpack xws"
   if [ "$os" = Darwin ]; then
     command -v shasum >/dev/null 2>&1 || fail "shasum is required to verify xws"
@@ -339,10 +343,10 @@ install_latest() {
   archive=$TEMP_DIR/$archive_name
   checksums=$TEMP_DIR/SHA256SUMS.txt
   printf 'Downloading xws for %s/%s...\n' "$os" "$machine"
-  curl -fLsS --retry 3 --connect-timeout 15 --max-time 300 \
+  curl --proto =https --tlsv1.2 -fLsS --retry 3 --connect-timeout 15 --max-time 300 \
     -o "$archive" "$release_base_url/$archive_name" ||
     fail "could not download $archive_name from $release_base_url"
-  curl -fLsS --retry 3 --connect-timeout 15 --max-time 60 \
+  curl --proto =https --tlsv1.2 -fLsS --retry 3 --connect-timeout 15 --max-time 60 \
     -o "$checksums" "$release_base_url/SHA256SUMS.txt" ||
     fail "could not download release checksums from $release_base_url"
 
