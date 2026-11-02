@@ -19,7 +19,11 @@ pub struct SessionArgs {
 #[derive(Subcommand)]
 pub enum SessionSubcommand {
     /// Create a new session
-    New,
+    New {
+        /// Process id of the owning shell; lets stale sessions be detected
+        #[arg(long)]
+        shell_pid: Option<u32>,
+    },
 
     /// Push an activation frame onto the session stack
     Push {
@@ -43,8 +47,8 @@ pub fn run(args: SessionArgs) -> Result<u8, Box<dyn std::error::Error>> {
     let sessions = SessionStore::from_environment()?;
 
     match args.operation {
-        SessionSubcommand::New => {
-            println!("XWS/1\tsession\t{}", sessions.create()?);
+        SessionSubcommand::New { shell_pid } => {
+            println!("XWS/1\tsession\t{}", sessions.create(shell_pid)?);
             Ok(0)
         }
 

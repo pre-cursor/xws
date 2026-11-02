@@ -572,6 +572,98 @@ fn move_and_remove_commands_enforce_workspace_rules() {
 }
 
 #[test]
+fn remove_and_move_refuse_a_workspace_active_in_another_live_shell() {
+    let temp = tempdir().unwrap();
+    let prefix = temp.path().join("prefix");
+    let state_home = temp.path().join("state");
+    successful(
+        picker(&prefix, &state_home)
+            .args(["create", "alpha"])
+            .output()
+            .unwrap(),
+    );
+
+    // The test process stands in for the other shell, so it is alive.
+    let shell_pid = std::process::id().to_string();
+    let created = successful(
+        picker(&prefix, &state_home)
+            .args(["session", "new", "--shell-pid", &shell_pid])
+            .output()
+            .unwrap(),
+    );
+    let id = created.trim().rsplit('\t').next().unwrap().to_owned();
+    let alpha = prefix.join("workspaces/alpha");
+    let mut push = picker(&prefix, &state_home)
+        .args(["session", "push", &id, "alpha"])
+        .arg(&alpha)
+        .arg(temp.path())
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(push.stdin.take());
+    assert!(push.wait().unwrap().success());
+
+    for args in [["remove", "alpha"], ["move", "alpha"]] {
+        let mut command = picker(&prefix, &state_home);
+        command.args(args);
+        if args[0] == "move" {
+            command.arg("renamed");
+        }
+        failed(command.output().unwrap(), "is active in shell pid");
+    }
+    let message = picker(&prefix, &state_home)
+        .args(["remove", "alpha"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&message.stderr);
+    assert!(stderr.contains("xws deactivate alpha"), "{stderr}");
+    assert!(stderr.contains("rm '"), "{stderr}");
+    assert!(alpha.is_dir());
+
+    successful(
+        picker(&prefix, &state_home)
+            .args(["session", "pop", &id])
+            .output()
+            .unwrap(),
+    );
+    successful(
+        picker(&prefix, &state_home)
+            .args(["remove", "alpha"])
+            .output()
+            .unwrap(),
+    );
+    assert!(!alpha.exists());
+}
+
+#[test]
+fn session_new_removes_sessions_of_exited_shells() {
+    let temp = tempdir().unwrap();
+    let prefix = temp.path().join("prefix");
+    let state_home = temp.path().join("state");
+    let sessions = state_home.join("sessions");
+    std::fs::create_dir_all(&sessions).unwrap();
+    // pid 2147483646 does not exist; the timestamp is after any boot.
+    let stale = sessions.join("1-99999999999999999999.json");
+    std::fs::write(&stale, r#"{"stack":[],"shell_pid":2147483646}"#).unwrap();
+    let kept = sessions.join("1-99999999999999999998.json");
+    std::fs::write(&kept, r#"{"stack":[]}"#).unwrap();
+
+    successful(
+        picker(&prefix, &state_home)
+            .args([
+                "session",
+                "new",
+                "--shell-pid",
+                &std::process::id().to_string(),
+            ])
+            .output()
+            .unwrap(),
+    );
+    assert!(!stale.exists());
+    assert!(kept.exists());
+}
+
+#[test]
 fn command_usage_and_invalid_configuration_return_errors() {
     let temp = tempdir().unwrap();
     let prefix = temp.path().join("prefix");

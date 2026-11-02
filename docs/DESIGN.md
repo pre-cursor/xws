@@ -74,8 +74,16 @@ $XWS_STATE_HOME/
 Session files live in the `sessions/` subdirectory, use private permissions,
 and are removed when the shell pops its last activation frame. A session ID is
 kept in an unexported shell variable and passed to the Rust CLI explicitly.
-If a shell exits while a workspace is still active, its session file may remain
-as stale state; xws does not attempt unsafe PID-based cleanup.
+Each session file records the PID of the owning shell (`session new
+--shell-pid`, which the wrapper fills with `$$`). If a shell exits while a
+workspace is still active, its file remains until the next `xws session new`,
+which deletes session files that are stale: created before the last boot
+(`kern.boottime` on macOS, `btime` in `/proc/stat` on Linux), or owned by a
+shell PID that no longer exists. Cleanup is best-effort and errors are ignored.
+Files from older versions have no recorded PID and are removed only by the boot
+rule. `xws remove` and `xws move` also scan live sessions and refuse to touch a
+workspace that is active in another shell, with a message that names the shell
+and how to resolve it.
 
 An installed xws distribution uses this layout, where `XWS_INSTALL_PREFIX`
 defaults to `$HOME/xws`:

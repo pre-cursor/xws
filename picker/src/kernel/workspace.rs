@@ -29,6 +29,9 @@ struct FeatureManifest {
     with_profiles: Option<Vec<String>>,
 }
 
+/// Reports whether a workspace is in use by another shell; `Err` blocks the operation.
+pub type OtherShellsGuard<'a> = &'a dyn Fn(&str) -> Result<(), Box<dyn Error>>;
+
 /// The live activation context as observed by the shell.
 ///
 /// This is a snapshot of the `XWS_WORKSPACE_PATH` environment variable: the
@@ -321,12 +324,13 @@ impl WorkspaceStore {
 
     /// Attempt to remove each workspace by name, returning one result per
     /// input name, in order. A result is `Err` when the name does not
-    /// resolve, when the workspace is the active one, or when the directory
-    /// cannot be removed. Presentation (printing and exit-code mapping) is
+    /// resolve, when the workspace is active here or (per `other_shells`) in
+    /// another shell, or when the directory cannot be removed. Presentation (printing and exit-code mapping) is
     /// left to the caller so the per-item outcome is not collapsed.
     pub fn remove_many(
         &self,
         active: &ActiveContext,
+        other_shells: OtherShellsGuard<'_>,
         names: &[String],
     ) -> Vec<Result<(), Box<dyn Error>>> {
         names
@@ -338,6 +342,7 @@ impl WorkspaceStore {
                         .to_string()
                         .into());
                 }
+                other_shells(name)?;
                 fs::remove_dir_all(&path)?;
                 Ok(())
             })
@@ -347,6 +352,7 @@ impl WorkspaceStore {
     pub fn move_workspace(
         &self,
         active: &ActiveContext,
+        other_shells: OtherShellsGuard<'_>,
         source: &str,
         target: &str,
     ) -> Result<(), Box<dyn Error>> {
@@ -357,6 +363,7 @@ impl WorkspaceStore {
         if active.is_active(&source_path) {
             return Err("deactivate the source workspace before moving it".into());
         }
+        other_shells(source)?;
         if fs::symlink_metadata(&target_path).is_ok() {
             return Err(format!("target workspace already exists: {target}").into());
         }
@@ -844,7 +851,7 @@ mod tests {
         };
         assert!(
             store
-                .remove_many(&active, &["guard".to_owned()])
+                .remove_many(&active, &|_| Ok(()), &["guard".to_owned()])
                 .into_iter()
                 .any(|result| result.is_err())
         );
@@ -853,11 +860,51 @@ mod tests {
         // With no active context, the same removal succeeds.
         assert!(
             !store
-                .remove_many(&ActiveContext::default(), &["guard".to_owned()])
+                .remove_many(
+                    &ActiveContext::default(),
+                    &|_| Ok(()),
+                    &["guard".to_owned()]
+                )
                 .into_iter()
                 .any(|result| result.is_err())
         );
         assert!(!workspace.exists());
+    }
+
+    #[test]
+    fn remove_and_move_consult_the_other_shells_guard() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = WorkspaceStore {
+            prefix: temp.path().to_path_buf(),
+        };
+        store.create("held", &[], &[]).unwrap();
+        store.create("free", &[], &[]).unwrap();
+        let guard = |name: &str| -> Result<(), Box<dyn Error>> {
+            if name == "held" {
+                Err("active elsewhere".into())
+            } else {
+                Ok(())
+            }
+        };
+        let active = ActiveContext::default();
+
+        let outcomes = store.remove_many(&active, &guard, &["held".to_owned(), "free".to_owned()]);
+        assert!(outcomes[0].is_err());
+        assert!(outcomes[1].is_ok());
+        assert!(store.workspace_path("held").is_ok());
+        assert!(store.workspace_path("free").is_err());
+
+        assert!(
+            store
+                .move_workspace(&active, &guard, "held", "moved")
+                .is_err()
+        );
+        assert!(store.workspace_path("held").is_ok());
+        store.create("free2", &[], &[]).unwrap();
+        store
+            .move_workspace(&active, &guard, "free2", "moved")
+            .unwrap();
+        assert!(store.workspace_path("moved").is_ok());
     }
 
     #[test]
@@ -877,6 +924,7 @@ mod tests {
         };
         let outcomes = store.remove_many(
             &active,
+            &|_| Ok(()),
             &[
                 "keep".to_owned(),
                 "missing".to_owned(),

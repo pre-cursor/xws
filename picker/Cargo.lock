@@ -781,6 +781,7 @@ dependencies = [
  "base64",
  "clap",
  "crossterm",
+ "libc",
  "portable-pty",
  "serde",
  "serde_json",

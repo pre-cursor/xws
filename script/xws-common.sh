@@ -89,7 +89,7 @@ _xws_path_remove() {
 _xws_ensure_session() {
   [[ -n "${_XWS_SESSION_ID-}" ]] && return 0
   local _xws_local_response _xws_local_version _xws_local_kind _xws_local_session_id
-  _xws_local_response="$(_xws_cli session new)" || return $?
+  _xws_local_response="$(_xws_cli session new --shell-pid "$$")" || return $?
   IFS=$'\t' read -r _xws_local_version _xws_local_kind _xws_local_session_id <<< "$_xws_local_response"
   if [[ "$_xws_local_version" != "XWS/1" || "$_xws_local_kind" != "session" || -z "$_xws_local_session_id" ]]; then
     printf 'xws: invalid session response from picker\n' >&2
