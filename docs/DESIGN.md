@@ -112,8 +112,11 @@ unrelated files. Startup integration is opt-in: `xws-install init bash|zsh`
 appends one marked, idempotent block to the selected startup file.
 
 Workspace names may contain spaces and punctuation, but cannot be empty, `.` or
-`..`, contain `/`, or contain control characters. Newline is excluded because
-workspace listing and picker output are line-oriented.
+`..`, start with `-` or `.`, contain `/` or `:`, or contain control characters.
+A leading `-` would be read as an option, `:` would corrupt `PATH` when the
+workspace `bin` directory is prepended, and newline is excluded because
+workspace listing and picker output are line-oriented. Directories that already
+have such names are skipped by `xws ls` with a warning; rename them by hand.
 
 ## Activation stack and tracked environment
 

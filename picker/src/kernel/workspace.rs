@@ -109,11 +109,17 @@ impl WorkspaceStore {
             if !entry.file_type()?.is_dir() {
                 continue;
             }
-            let name = entry
-                .file_name()
-                .into_string()
-                .map_err(|_| "workspace name is not valid UTF-8")?;
-            validate_name(&name)?;
+            let Ok(name) = entry.file_name().into_string() else {
+                eprintln!(
+                    "xws: skipping workspace directory with a non-UTF-8 name: {}",
+                    entry.path().display()
+                );
+                continue;
+            };
+            if let Err(error) = validate_name(&name) {
+                eprintln!("xws: skipping workspace directory: {error}");
+                continue;
+            }
             workspaces.push(name);
         }
         workspaces.sort();
@@ -556,15 +562,20 @@ fn packaged_templates_root() -> Result<PathBuf, Box<dyn Error>> {
 }
 
 pub fn validate_name(name: &str) -> Result<(), Box<dyn Error>> {
-    if name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.contains('/')
-        || name.chars().any(char::is_control)
-    {
-        return Err(format!("invalid workspace name: '{name}'").into());
-    }
-    Ok(())
+    let reason = if name.is_empty() {
+        "cannot be empty"
+    } else if name == "." || name == ".." {
+        "cannot be '.' or '..'"
+    } else if name.starts_with(['-', '.']) {
+        "cannot start with '-' or '.'"
+    } else if name.contains(['/', ':']) {
+        "cannot contain '/' or ':'"
+    } else if name.chars().any(char::is_control) {
+        "cannot contain control characters"
+    } else {
+        return Ok(());
+    };
+    Err(format!("invalid workspace name '{}': {reason}", name.escape_debug()).into())
 }
 
 pub fn validate_feature_name(name: &str) -> Result<(), Box<dyn Error>> {
@@ -706,7 +717,18 @@ mod tests {
 
     #[test]
     fn rejects_empty_traversal_and_control_names() {
-        for name in ["", ".", "..", "../outside", "two\nlines"] {
+        for name in [
+            "",
+            ".",
+            "..",
+            "../outside",
+            "two\nlines",
+            "-x",
+            "--help",
+            ".foo",
+            "a:b",
+            "a/b",
+        ] {
             assert!(validate_name(name).is_err(), "{name:?} should be rejected");
         }
     }

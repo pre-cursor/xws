@@ -619,6 +619,38 @@ fn command_usage_and_invalid_configuration_return_errors() {
             .unwrap(),
         "invalid workspace name",
     );
+    for name in ["-x", ".hidden", "a:b"] {
+        failed(
+            picker(&prefix, &state_home)
+                .args(["create", "--", name])
+                .output()
+                .unwrap(),
+            "invalid workspace name",
+        );
+    }
+}
+
+#[test]
+fn list_skips_invalid_directories_with_a_warning() {
+    let temp = tempdir().unwrap();
+    let prefix = temp.path().join("prefix");
+    let state_home = temp.path().join("state");
+
+    successful(
+        picker(&prefix, &state_home)
+            .args(["create", "demo"])
+            .output()
+            .unwrap(),
+    );
+    for bad in ["-x", ".hidden", "a:b"] {
+        std::fs::create_dir(prefix.join("workspaces").join(bad)).unwrap();
+    }
+
+    let output = picker(&prefix, &state_home).arg("list").output().unwrap();
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "demo\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(stderr.matches("skipping workspace directory").count(), 3);
 }
 
 #[test]
