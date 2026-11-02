@@ -127,7 +127,7 @@ sys.keyCode(RETURN);
 delay(1.5);
 
 typeCommand("xws pop", 0.5);
-typeCommand("python -c \"import sys; print(f'Hello PythonWorld from {sys.executable}')\"", 0.5);
+typeCommand("python -c \"import sys; print(f'Hello Python World from {sys.executable}')\"", 0.5);
 
 sys.keyCode(RETURN);
 delay(1.5);
