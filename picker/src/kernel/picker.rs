@@ -126,6 +126,26 @@ impl TerminalGuard {
     }
 }
 
+impl TerminalGuard {
+    /// Re-reserve the inline block after a resize. The cursor is still on the
+    /// block's first row, so clear from there down, then scroll the screen if
+    /// the block no longer fits below it, exactly as `enter` does.
+    fn reflow_inline(&mut self, inline_rows: u16) -> Result<(), Box<dyn Error>> {
+        if self.display != DisplayMode::Inline {
+            return Ok(());
+        }
+        execute!(
+            io::stderr(),
+            MoveToColumn(0),
+            Clear(ClearType::FromCursorDown),
+            Print("\r\n".repeat(usize::from(inline_rows))),
+            MoveUp(inline_rows)
+        )?;
+        self.inline_rows = inline_rows;
+        Ok(())
+    }
+}
+
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         match self.display {
@@ -161,13 +181,13 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
     let (_, rows) = terminal::size()?;
     let initial_height = viewport_height(rows);
     let inline_height = initial_height.min(workspaces.len());
-    let inline_rows = inline_height.saturating_add(2).min(usize::from(rows)) as u16;
+    let inline_rows = inline_block_rows(inline_height, rows);
     let mut selected = active.and_then(|name| workspaces.iter().position(|item| item == name));
     let mut first_visible = selected.map_or(0, |index| index.saturating_sub(3));
-    let _terminal = TerminalGuard::enter(display, inline_rows)?;
+    let mut terminal = TerminalGuard::enter(display, inline_rows)?;
 
     loop {
-        let (_, rows) = terminal::size()?;
+        let (cols, rows) = terminal::size()?;
         let viewport_height = match display {
             DisplayMode::Alternate => viewport_height(rows),
             DisplayMode::Inline => inline_height.min(viewport_height(rows)),
@@ -180,12 +200,16 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
             selected,
             first_visible,
             viewport_height,
-            rows,
+            (cols, rows),
             display,
         )?;
 
         match event::read()? {
-            Event::Resize(_, _) => continue,
+            Event::Resize(_, rows) => {
+                let height = inline_height.min(self::viewport_height(rows));
+                terminal.reflow_inline(inline_block_rows(height, rows))?;
+                continue;
+            }
             Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     selected = Some(move_selection(selected, workspaces.len(), Direction::Up));
@@ -215,6 +239,20 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
             _ => {}
         }
     }
+}
+
+/// Rows an inline picker occupies: the list plus a header and a footer,
+/// never more than the window has.
+fn inline_block_rows(list_height: usize, terminal_rows: u16) -> u16 {
+    let rows = list_height
+        .saturating_add(2)
+        .min(usize::from(terminal_rows));
+    u16::try_from(rows).unwrap_or(terminal_rows)
+}
+
+/// Cut `text` to the window width so a row never wraps into the next one.
+fn fit(text: &str, cols: u16) -> String {
+    text.chars().take(usize::from(cols)).collect()
 }
 
 fn viewport_height(rows: u16) -> usize {
@@ -277,7 +315,7 @@ fn render(
     selected: Option<usize>,
     first: usize,
     height: usize,
-    terminal_rows: u16,
+    (cols, terminal_rows): (u16, u16),
     display: DisplayMode,
 ) -> Result<(), Box<dyn Error>> {
     let mut output = io::stderr().lock();
@@ -287,7 +325,7 @@ fn render(
                 output,
                 MoveTo(0, 0),
                 Clear(ClearType::All),
-                Print("xws — select a workspace")
+                Print(fit("xws — select a workspace", cols))
             )?;
         }
         DisplayMode::Inline => {
@@ -296,7 +334,7 @@ fn render(
                 SavePosition,
                 MoveToColumn(0),
                 Clear(ClearType::CurrentLine),
-                Print("xws — select a workspace"),
+                Print(fit("xws — select a workspace", cols)),
                 MoveToNextLine(1)
             )?;
         }
@@ -311,11 +349,11 @@ fn render(
                 queue!(
                     output,
                     SetAttribute(Attribute::Reverse),
-                    Print(format!(" > {name} ")),
+                    Print(fit(&format!(" > {name} "), cols)),
                     SetAttribute(Attribute::Reset)
                 )?;
             } else {
-                queue!(output, Print(format!("   {name}")))?;
+                queue!(output, Print(fit(&format!("   {name}"), cols)))?;
             }
         }
         if display == DisplayMode::Inline {
@@ -331,7 +369,10 @@ fn render(
                 queue!(output, Clear(ClearType::CurrentLine))?;
             }
         }
-        queue!(output, Print("↑/↓ or j/k move  Enter select  q quit"))?;
+        queue!(
+            output,
+            Print(fit("↑/↓ or j/k move  Enter select  q quit", cols))
+        )?;
     }
     if display == DisplayMode::Inline {
         queue!(output, RestorePosition)?;
