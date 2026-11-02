@@ -46,6 +46,7 @@ Traditional tools either force you into sluggish nested subshells (`nix-shell`, 
 * **macOS** (Intel and Apple silicon)
 * **Linux** (x86-64)
 * **Shells:** Bash (4+) and Zsh
+* **`bash` on `PATH`:** `xws create` runs each new workspace's `bin/once` setup script with `bash`, even when you use Zsh.
 
 ---
 
