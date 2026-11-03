@@ -274,13 +274,22 @@ omitted `with-profiles` means the feature is generally applicable.
 - **java profile**: locates an installed JDK at activation time, sets
   `JAVA_HOME`, and adds the JDK's `bin/` to `PATH`. If no JDK is found it
   warns and skips setup; it does not install one.
-- **python profile**: `once` creates a local `.venv` with `python3 -m venv`;
-  activation sources it when present. It does not install Python or project
-  dependencies.
+- **conda profile**: requires `CONDA_ENV` during creation, records the name of
+  an existing Conda environment, and activates/deactivates it with the Conda
+  shell integration. Packages installed with pip go into that Conda
+  environment unless the `venv` feature is also selected. It does not create
+  Conda environments.
+- **python profile**: creates a workspace-local `.venv` with
+  `python3 -m venv`; this is the direct choice for per-workspace package
+  isolation without Conda.
 - **rust profile**: adds `RUST_BACKTRACE=1` to `bin/env`; it does not change
   Cargo's target directory or manage Rust toolchains.
 - **golang feature**: a non-invasive starter hook; configure values such as
   `GOPATH` in `bin/env` or edit the generated hooks.
+- **venv feature**: restricted to the Conda profile; creates a workspace-local
+  `.venv` using the selected Conda environment's Python, so the interpreter
+  comes from Conda while project packages remain in the workspace. It does not
+  install Python or project dependencies.
 
 Language managers remain responsible for installing and selecting toolchains.
 Profiles/features may configure existing tools or local project environments,

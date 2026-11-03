@@ -1,0 +1,18 @@
+# Activate the Conda environment selected when this workspace was created.
+if ! command -v conda >/dev/null 2>&1; then
+  printf 'xws: Conda profile requires conda to be available in this shell\n' >&2
+  return 1
+fi
+
+_xws_conda_env=$(cat "$XWS_WORKSPACE_PATH/.conda-env") || return 1
+if [[ -z "$_xws_conda_env" ]]; then
+  printf 'xws: Conda environment name is missing from this workspace\n' >&2
+  return 1
+fi
+conda activate "$_xws_conda_env"
+_xws_conda_status=$?
+unset _xws_conda_env
+if (( _xws_conda_status != 0 )); then
+  return "$_xws_conda_status"
+fi
+unset _xws_conda_status

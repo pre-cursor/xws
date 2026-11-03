@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -e
+
+if [[ -z "${CONDA_ENV-}" || "$CONDA_ENV" == *$'\n'* || "$CONDA_ENV" == *$'\r'* ]]; then
+  printf 'xws: set CONDA_ENV to the name of an existing Conda environment\n' >&2
+  exit 1
+fi
+
+printf '%s\n' "$CONDA_ENV" > .conda-env

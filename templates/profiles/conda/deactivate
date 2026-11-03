@@ -1,0 +1,15 @@
+# Deactivate the Conda environment activated by this profile.
+if [[ -n "${CONDA_DEFAULT_ENV-}" ]] && command -v conda >/dev/null 2>&1; then
+  _xws_conda_env=$(cat "$XWS_WORKSPACE_PATH/.conda-env") || return 1
+  if [[ "$CONDA_DEFAULT_ENV" == "$_xws_conda_env" ]]; then
+    conda deactivate
+    _xws_conda_status=$?
+    unset _xws_conda_env
+    if (( _xws_conda_status != 0 )); then
+      return "$_xws_conda_status"
+    fi
+    unset _xws_conda_status
+  else
+    unset _xws_conda_env
+  fi
+fi

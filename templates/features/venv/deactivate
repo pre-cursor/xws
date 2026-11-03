@@ -1,0 +1,4 @@
+# Undo activation of this workspace's local virtual environment.
+if [[ "${VIRTUAL_ENV-}" == "$XWS_WORKSPACE_PATH/.venv" ]] && type deactivate >/dev/null 2>&1; then
+  deactivate
+fi

@@ -192,9 +192,14 @@ deliberately sourced by xws in lexical filename order. Review scripts before
 placing them there; these are trusted shell code. The main `bin/activate` and
 `bin/deactivate` hooks also remain editable.
 
-## 7. Try the Python or Rust profile
+## 7. Choose a Python environment
 
-The Python profile creates a workspace-local `.venv` during creation:
+There are two ways to set up Python, depending on where you want package
+isolation.
+
+The `python` profile creates a workspace-local `.venv` from `python3` on
+`PATH`. It is the simple choice for a project-specific environment; packages
+installed with pip go into that workspace's venv:
 
 ```sh
 xws create --profile python python-demo
@@ -203,7 +208,31 @@ python --version
 xws pop
 ```
 
-It requires `python3` but does not install Python or project dependencies.
+Alternatively, the `conda` profile uses an existing Conda environment. xws
+does not create Conda environments or select their Python version. Set
+`CONDA_ENV` when creating the workspace; xws records the selected name:
+
+```sh
+CONDA_ENV=project-env xws create --profile conda conda-demo
+xws push conda-demo
+python --version
+xws pop
+```
+
+With Conda alone, pip installs go into that Conda environment, which may be
+shared with other projects. For a separate package environment per workspace,
+add the `venv` feature:
+
+```sh
+CONDA_ENV=project-env xws create --profile conda --with-feature venv isolated-demo
+```
+
+The feature is restricted to the Conda profile. It creates `.venv` using
+Python from the selected Conda environment, then activates it after Conda.
+This keeps the selected Conda environment as the Python source while pip
+installs go into the workspace-local venv. Conda must be available and
+initialized in the interactive shell. xws does not install Python or project
+dependencies.
 
 The Rust profile adds `RUST_BACKTRACE=1` to the workspace's `bin/env` file:
 
@@ -239,7 +268,7 @@ Deactivate a workspace before moving or removing it:
 ```sh
 xws pop
 xws mv api api-v2
-xws rm web "image catalog" feature-demo python-demo rust-demo service api-v2
+xws rm web "image catalog" feature-demo python-demo conda-demo isolated-demo rust-demo service api-v2
 ```
 
 Removal is explicit; the picker never deletes entries. Batch removal reports

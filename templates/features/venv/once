@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -e
+
+command -v conda >/dev/null 2>&1 || {
+  printf 'xws: the venv feature requires conda to create .venv from the selected environment\n' >&2
+  exit 1
+}
+
+conda_env=$(<.conda-env)
+conda run --name "$conda_env" python -m venv .venv

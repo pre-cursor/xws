@@ -30,7 +30,7 @@ Traditional tools either force you into sluggish nested subshells (`nix-shell`, 
 * **Stacked Context Switching** — Jump into a client triage session mid-workflow (`xws push client-acme`). When finished, pop it (`xws pop`) to automatically return to your previous directory and restore your prior environment.
 * **Zero-Leakage Variable Restoration** — Declare project variables in declarative `bin/env` files. `xws` records the exact prior state of every variable (set, exported, or unset) and restores it atomically upon deactivation.
 * **Frictionless Terminal Picker** — Run `xws` with no arguments to launch an interactive, keyboard-driven UI to search and switch between client environments. Supports both alternate screen buffer and inline display modes.
-* **Pre-Baked Profiles & Stacks** — Bootstrap customer environments instantly with built-in profiles (**Python** venvs, **Rust** environments, **Java** JDK path auto-discovery) and extensible features (**Golang**, custom internal toolchains).
+* **Pre-Baked Profiles & Stacks** — Bootstrap customer environments instantly with built-in profiles (**Python** workspace venvs, **Conda**, **Rust**, **Java** JDK path auto-discovery) and extensible features (**venv** isolation on Conda, **Golang**, custom internal toolchains).
 * **Defensive, Symlink-Hardened Storage** — Workspaces live cleanly under `$HOME/xws/workspaces` with atomic session state stored in `$HOME/.xws` using restricted permissions (`0o700`/`0o600`) and symlink-traversal guards.
 
 ---
@@ -81,8 +81,8 @@ Reload your shell (`source ~/.bashrc` or `source ~/.zshrc`) to activate.
 Create clean, isolated workspaces for your customer engagements:
 
 ```bash
-# Create client contexts
-xws create acme-poc --profile python
+# Create client contexts (the Conda environment must already exist)
+CONDA_ENV=acme-env xws create acme-poc --profile conda
 xws create globex-demo --profile rust
 
 # Activate the Acme engagement
@@ -117,8 +117,8 @@ xws pop
 | `xws push NAME` *(aliases: `activate`, `use`)* | Activate a workspace in the current shell and push it onto the context stack. |
 | `xws pop` *(alias: `deactivate`)* | Safely deactivate the current workspace and restore the prior environment. |
 | `xws ls` *(alias: `list`)* | List all workspaces (marks the currently active workspace with `*`). |
-| `xws profiles` | List available runtime profiles (e.g. `python`, `rust`, `java`). |
-| `xws features` | List optional feature extensions (e.g. `golang`). |
+| `xws profiles` | List available runtime profiles (e.g. `python`, `conda`, `rust`, `java`). |
+| `xws features` | List optional feature extensions (e.g. `venv`, `golang`). |
 | `xws which NAME` | Print the filesystem path to a workspace's isolated `bin/` directory. |
 | `xws path NAME` | Print the workspace root path. |
 | `xws mv SOURCE TARGET` | Rename a workspace (guarded against active sessions). |

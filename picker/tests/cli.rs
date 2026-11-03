@@ -241,6 +241,125 @@ fn rust_profile_only_adds_the_backtrace_environment_default() {
 }
 
 #[test]
+fn conda_profile_records_an_existing_environment_and_venv_uses_its_python() {
+    let temp = tempdir().unwrap();
+    let prefix = temp.path().join("prefix");
+    let state_home = temp.path().join("state");
+    let templates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../templates");
+
+    failed(
+        picker(&prefix, &state_home)
+            .args(["create", "--profile", "conda", "missing-env"])
+            .env("XWS_TEMPLATES_DIR", &templates)
+            .output()
+            .unwrap(),
+        "set CONDA_ENV",
+    );
+
+    let fake_bin = temp.path().join("fake-bin");
+    std::fs::create_dir(&fake_bin).unwrap();
+    let conda = fake_bin.join("conda");
+    std::fs::write(
+        &conda,
+        "#!/usr/bin/env bash\n\
+         [[ \"$1\" == run && \"$2\" == --name && \"$3\" == existing-env ]] || exit 2\n\
+         [[ \"$4\" == python && \"$5\" == -m && \"$6\" == venv && \"$7\" == .venv ]] || exit 3\n\
+         mkdir -p .venv/bin\n\
+         printf 'VIRTUAL_ENV=\"$XWS_WORKSPACE_PATH/.venv\"\\ndeactivate() { unset VIRTUAL_ENV; }\\n' > .venv/bin/activate\n",
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&conda).unwrap().permissions();
+    use std::os::unix::fs::PermissionsExt;
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&conda, permissions).unwrap();
+    let mut path_entries = vec![fake_bin];
+    path_entries.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    let path = std::env::join_paths(path_entries).unwrap();
+
+    successful(
+        picker(&prefix, &state_home)
+            .args([
+                "create",
+                "--profile",
+                "conda",
+                "--with-feature",
+                "venv",
+                "isolated",
+            ])
+            .env("XWS_TEMPLATES_DIR", &templates)
+            .env("CONDA_ENV", "existing-env")
+            .env("PATH", path)
+            .output()
+            .unwrap(),
+    );
+
+    let workspace = prefix.join("workspaces/isolated");
+    assert_eq!(
+        std::fs::read_to_string(workspace.join(".conda-env")).unwrap(),
+        "existing-env\n"
+    );
+    assert!(workspace.join(".venv/bin/activate").is_file());
+    assert!(
+        workspace
+            .join("bin/activate.d/10-profile-00000000000000000000")
+            .is_file()
+    );
+    assert!(workspace.join("bin/activate.d/20-feature-venv").is_file());
+    assert!(workspace.join("bin/deactivate.d/10-feature-venv").is_file());
+    assert!(
+        workspace
+            .join("bin/deactivate.d/20-profile-00000000000000000000")
+            .is_file()
+    );
+
+    let hooks = Command::new("bash")
+        .args([
+            "-c",
+            r#"
+conda() {
+  case "$1" in
+    activate) CONDA_DEFAULT_ENV="$2"; export CONDA_DEFAULT_ENV ;;
+    deactivate) unset CONDA_DEFAULT_ENV ;;
+  esac
+}
+export XWS_WORKSPACE_PATH="$1"
+source "$1/bin/activate.d/10-profile-00000000000000000000" || exit 1
+source "$1/bin/activate.d/20-feature-venv" || exit 2
+[[ "$CONDA_DEFAULT_ENV" == existing-env && "$VIRTUAL_ENV" == "$1/.venv" ]] || exit 3
+source "$1/bin/deactivate.d/10-feature-venv" || exit 4
+[[ -z "${VIRTUAL_ENV-}" && "$CONDA_DEFAULT_ENV" == existing-env ]] || exit 5
+source "$1/bin/deactivate.d/20-profile-00000000000000000000" || exit 6
+[[ -z "${CONDA_DEFAULT_ENV-}" ]]
+"#,
+            "test",
+        ])
+        .arg(&workspace)
+        .status()
+        .unwrap();
+    assert!(hooks.success(), "generated activation hooks failed");
+}
+
+#[test]
+fn venv_feature_requires_conda_profile() {
+    let temp = tempdir().unwrap();
+    let prefix = temp.path().join("prefix");
+    let state_home = temp.path().join("state");
+    let templates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../templates");
+
+    failed(
+        picker(&prefix, &state_home)
+            .args(["create", "--with-feature", "venv", "standalone-venv"])
+            .env("XWS_TEMPLATES_DIR", templates)
+            .output()
+            .unwrap(),
+        "requires one of these profiles: conda",
+    );
+    assert!(!prefix.join("workspaces/standalone-venv").exists());
+}
+
+#[test]
 fn profile_and_feature_bundles_are_discovered_from_their_directories() {
     let temp = tempdir().unwrap();
     let prefix = temp.path().join("prefix");
@@ -273,7 +392,7 @@ fn profile_and_feature_bundles_are_discovered_from_their_directories() {
                 .output()
                 .unwrap()
         ),
-        "default\nhaskell\njava\npython\nrust\n"
+        "conda\ndefault\nhaskell\njava\npython\nrust\n"
     );
     assert_eq!(
         successful(
@@ -282,7 +401,7 @@ fn profile_and_feature_bundles_are_discovered_from_their_directories() {
                 .output()
                 .unwrap()
         ),
-        "cabal\ngolang\n"
+        "cabal\ngolang\nvenv\n"
     );
 
     successful(
