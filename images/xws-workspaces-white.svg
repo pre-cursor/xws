@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1248" height="1248" viewBox="0 0 1248 1248"
+     role="img" aria-labelledby="title desc">
+  <title id="title">XWS workspace transition icon</title>
+  <desc id="desc">Three progressively larger white workspace panels transition into a bold coral-red forward chevron on a black rounded-square background.</desc>
+
+  <!-- Background -->
+  <rect x="1" y="1" width="1246" height="1246" rx="190"
+        fill="#FFFFFF" stroke="#171717" stroke-width="0"/>
+
+  <!-- Workspace layers -->
+  <g fill="#000000">
+    <path d="M270 430
+             Q270 405 291 409
+             L365 453
+             L365 720
+             L291 765
+             Q270 769 270 744 Z"/>
+    <path d="M403 376
+             Q403 350 425 353
+             L510 407
+             L510 766
+             L425 820
+             Q403 824 403 798 Z"/>
+    <path d="M550 306
+             Q550 279 575 282
+             L695 356
+             L626 405
+             L626 765
+             L695 815
+             L575 889
+             Q550 893 550 866 Z"/>
+  </g>
+
+  <!-- Forward transition -->
+  <path d="M731 371
+           L989 558
+           Q1007 571 1007 585
+           Q1007 599 989 612
+           L731 795
+           L660 746
+           L882 585
+           L660 421 Z"
+        fill="#FF3345"/>
+</svg>

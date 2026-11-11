@@ -1,6 +1,6 @@
 
 <h1>
-  <img src="./logo.svg" align="left" height="46px" alt="xws logo"/>
+  <img src="./images/xws-workspaces-transparent.svg" align="left" height="46px" alt="xws logo"/>
   <span>xws</span>
 </h1>
 
