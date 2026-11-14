@@ -1,3 +1,5 @@
+use crate::kernel::session::SessionStore;
+
 use std::error::Error;
 
 use base64::Engine;
@@ -16,6 +18,15 @@ pub fn decode(value: &str) -> Result<String, Box<dyn Error>> {
         return Ok(String::new());
     }
     Ok(String::from_utf8(STANDARD.decode(value)?)?)
+}
+
+pub fn ensure_inactive_in_other_shells(
+    sessions: Option<SessionStore>,
+) -> impl Fn(&str) -> Result<(), Box<dyn std::error::Error>> {
+    move |name| match &sessions {
+        Some(sessions) => sessions.ensure_inactive_in_other_shells(name),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]

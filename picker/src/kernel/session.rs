@@ -58,10 +58,7 @@ impl SessionStore {
     pub fn create(&self, shell_pid: Option<u32>) -> Result<String, Box<dyn Error>> {
         fs::create_dir_all(&self.root)?;
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&self.root, fs::Permissions::from_mode(0o700))?;
-        }
+        set_private_dir(&self.root)?;
         self.remove_stale_with(boot_time_nanos(), &pid_is_alive);
 
         let stamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
@@ -76,10 +73,7 @@ impl SessionStore {
             match OpenOptions::new().write(true).create_new(true).open(&path) {
                 Ok(mut file) => {
                     #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        file.set_permissions(fs::Permissions::from_mode(0o600))?;
-                    }
+                    set_private_file(&file)?;
                     let session = Session {
                         stack: Vec::new(),
                         shell_pid,
@@ -277,10 +271,7 @@ impl SessionStore {
             .create_new(true)
             .open(&temp)?;
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(fs::Permissions::from_mode(0o600))?;
-        }
+        set_private_file(&file)?;
         serde_json::to_writer(&mut file, session)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
@@ -376,6 +367,28 @@ fn boot_time_nanos() -> Option<u128> {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn boot_time_nanos() -> Option<u128> {
     None
+}
+
+#[cfg(unix)]
+fn set_private_file(file: &std::fs::File) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    file.set_permissions(fs::Permissions::from_mode(0o600))
+}
+
+#[cfg(not(unix))]
+fn set_private_file(_file: &std::fs::File) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_private_dir(path: &std::path::Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+}
+
+#[cfg(not(unix))]
+fn set_private_dir(_path: &std::path::Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 fn validate_frame(frame: &ActivationFrame) -> Result<(), Box<dyn Error>> {

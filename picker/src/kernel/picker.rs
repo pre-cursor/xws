@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::io::{self, Write};
+use std::path::PathBuf;
 
 use crossterm::cursor::{
     Hide, MoveDown, MoveTo, MoveToColumn, MoveToNextLine, MoveUp, RestorePosition, SavePosition,
@@ -57,13 +58,13 @@ struct PickerConfig {
     screen_buffer: Option<String>,
 }
 
-fn config_path() -> Result<std::path::PathBuf, Box<dyn Error>> {
+fn config_path() -> Result<PathBuf, Box<dyn Error>> {
     let root = match std::env::var_os("XWS_STATE_HOME") {
-        Some(path) => std::path::PathBuf::from(path),
-        None => std::path::PathBuf::from(
-            std::env::var_os("HOME").ok_or("HOME is not set; set XWS_STATE_HOME")?,
-        )
-        .join(".xws"),
+        Some(path) => PathBuf::from(path),
+        None => {
+            PathBuf::from(std::env::var_os("HOME").ok_or("HOME is not set; set XWS_STATE_HOME")?)
+                .join(".xws")
+        }
     };
     Ok(root.join("config.toml"))
 }
@@ -212,9 +213,10 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
             }
             Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                 KeyCode::Up | KeyCode::Char('k') => {
-                    selected = Some(move_selection(selected, workspaces.len(), Direction::Up));
+                    let index = move_selection(selected, workspaces.len(), Direction::Up);
+                    selected = Some(index);
                     first_visible = keep_visible(
-                        selected.unwrap(),
+                        index,
                         first_visible,
                         workspaces.len(),
                         viewport_height,
@@ -222,9 +224,10 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
                     );
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    selected = Some(move_selection(selected, workspaces.len(), Direction::Down));
+                    let index = move_selection(selected, workspaces.len(), Direction::Down);
+                    selected = Some(index);
                     first_visible = keep_visible(
-                        selected.unwrap(),
+                        index,
                         first_visible,
                         workspaces.len(),
                         viewport_height,

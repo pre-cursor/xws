@@ -2,6 +2,8 @@ use clap::Args;
 
 use crate::kernel::picker;
 
+const CANCELLED: u8 = 130;
+
 #[derive(Args)]
 pub struct PickArgs {
     /// Name of the currently active workspace to pre-select in the picker.
@@ -37,6 +39,6 @@ pub fn run(args: PickArgs) -> Result<u8, Box<dyn std::error::Error>> {
             println!("{name}");
             Ok(0)
         }
-        None => Ok(130),
+        None => Ok(CANCELLED),
     }
 }

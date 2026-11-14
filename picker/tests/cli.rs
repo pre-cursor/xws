@@ -662,7 +662,7 @@ fn move_and_remove_commands_enforce_workspace_rules() {
             .env("XWS_WORKSPACE_PATH", &active_path)
             .output()
             .unwrap(),
-        "Deactivate the workspace",
+        "deactivate the workspace",
     );
     assert!(active_path.is_dir());
 

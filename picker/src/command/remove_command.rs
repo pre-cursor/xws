@@ -1,6 +1,9 @@
-use crate::kernel::{
-    session::SessionStore,
-    workspace::{ActiveContext, WorkspaceStore},
+use crate::{
+    command::helpers::ensure_inactive_in_other_shells,
+    kernel::{
+        session::SessionStore,
+        workspace::{ActiveContext, WorkspaceStore},
+    },
 };
 use clap::Args;
 
@@ -15,10 +18,7 @@ pub fn run(args: RemoveArgs) -> Result<u8, Box<dyn std::error::Error>> {
     let active = ActiveContext::from_env();
 
     let sessions = SessionStore::from_environment().ok();
-    let other_shells = |name: &str| match &sessions {
-        Some(sessions) => sessions.ensure_inactive_in_other_shells(name),
-        None => Ok(()),
-    };
+    let other_shells = ensure_inactive_in_other_shells(sessions);
 
     let mut failed = false;
     for (name, result) in

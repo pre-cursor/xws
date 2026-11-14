@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -201,7 +201,7 @@ impl WorkspaceStore {
             .once
             .as_ref()
             .ok_or("default profile is missing once template")?;
-        let mut selected_profiles = std::collections::HashSet::new();
+        let mut selected_profiles = HashSet::new();
         let mut profiles = profiles.to_vec();
         for profile in &profiles {
             validate_name(profile)?;
@@ -338,7 +338,7 @@ impl WorkspaceStore {
             .map(|name| {
                 let path = self.workspace_path(name)?;
                 if active.is_active(&path) {
-                    return Err("Deactivate the workspace before removing it"
+                    return Err("deactivate the workspace before removing it"
                         .to_string()
                         .into());
                 }
@@ -431,7 +431,7 @@ impl WorkspaceStore {
         features: &[String],
         profiles: &[String],
     ) -> Result<Vec<ResolvedFeature>, Box<dyn Error>> {
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = HashSet::new();
         let mut resolved = Vec::new();
         let available_features = self.features()?;
         for feature in features {
@@ -469,7 +469,7 @@ impl WorkspaceStore {
                     )
                     .into());
                 }
-                let mut allowed = std::collections::HashSet::new();
+                let mut allowed = HashSet::new();
                 for profile in allowed_profiles {
                     validate_name(profile).map_err(|_| {
                         format!(
@@ -681,7 +681,7 @@ fn append_environment_template(
 
 fn parse_environment(path: &Path, contents: &str) -> Result<Vec<(String, String)>, Box<dyn Error>> {
     let mut variables = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = HashSet::new();
     for (index, line) in contents.lines().enumerate() {
         let line = line.trim_end_matches('\r');
         if line.is_empty() || line.starts_with('#') {
