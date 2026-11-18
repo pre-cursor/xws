@@ -322,13 +322,40 @@ deactivation hook fails.
 
 - Highlights the active workspace when present; otherwise starts unselected.
 - First Up selects the first entry; first Down selects the last.
-- Arrow keys and `k`/`j` move one row, clamp at endpoints, and do not wrap.
-- Enter selects; Escape, `q`, or Ctrl-C cancels.
+- In the unfiltered list, Up/Down and Ctrl-P/Ctrl-N move one row, clamp at
+  endpoints, and do not wrap. Enter selects; Escape or Ctrl-C cancels.
 - Uses a scrollable viewport with selection-aware one-third/two-thirds
   scrolling and reserves two extra terminal rows to avoid drawing at the
   reported lower edge.
 - Terminal UI is written to stderr; protocol selection/cancel goes to stdout.
 - Terminal raw mode and cursor state are restored through an RAII guard.
+
+Press `/` or Ctrl-F to edit a workspace-name query. An empty query matches every
+workspace, and matches update as the query is typed or edited. Search is
+case-insensitive and supports literal substring matching, a leading `^` for
+start anchoring, a trailing `$` for end anchoring, and `.` for any one
+character. `*` has no special meaning. Backslash escapes the next character,
+so `\.` matches a literal period. A trailing backslash remains pending while
+editing; attempting to enter navigation with it unfinished reports an error
+and keeps the query open.
+
+`query_render_mode` in `config.toml` controls the list presentation:
+`filtered` (the default) displays only matches; `full` keeps all workspaces
+visible while highlighting the selected match. Both modes navigate the same
+ordered match list. Enter or an Up/Down or Ctrl-P/Ctrl-N key in query entry
+switches to filtered navigation without also moving the selection. Navigation
+starts at the first match after the previous selection in original-list order,
+wrapping at the end. In filtered navigation, Up/Down and Ctrl-P/Ctrl-N wrap
+through matches; Enter activates the selected workspace.
+
+No matches are reported as `E486: Pattern not found: <query>` in the query
+area when the user attempts to enter navigation. The picker remains in query
+entry; pressing `/` or Ctrl-F clears the message and restores the query for
+editing.
+Escape in query entry clears the filter and restores the original list and
+selection. Escape outside query entry cancels the picker. Re-entering query
+entry from filtered navigation preserves the query and places the cursor at
+its end. Query state is discarded when the picker closes.
 
 Removal is explicit; the picker never deletes a workspace.
 

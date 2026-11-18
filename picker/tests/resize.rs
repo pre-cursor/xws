@@ -206,6 +206,15 @@ fn highlighted(session: &Session) -> Vec<String> {
         .collect()
 }
 
+fn workspace_rows(session: &Session) -> Vec<String> {
+    let block = block(session);
+    block[1..block.len() - 1]
+        .iter()
+        .filter(|line| line.contains("ws-") || line.contains("example"))
+        .cloned()
+        .collect()
+}
+
 #[test]
 fn selection_stays_visible_and_follows_the_keys_after_a_resize() {
     let (_temp, prefix, state_home) = workspaces(30);
@@ -252,4 +261,110 @@ fn selection_stays_visible_and_follows_the_keys_after_a_resize() {
             previous = shown;
         }
     }
+}
+
+#[test]
+fn live_query_filters_and_navigation_key_only_changes_modes() {
+    let (_temp, prefix, state_home) = workspaces(5);
+    let mut session = Session::start(&prefix, &state_home, 12, 80);
+
+    session.send(b"/ws-01");
+    let shown = workspace_rows(&session);
+    assert_eq!(shown.len(), 1, "{}", session.describe());
+    assert!(shown[0].contains("ws-01"), "{}", session.describe());
+
+    session.send(b"\x7f");
+    let shown = workspace_rows(&session);
+    assert_eq!(shown.len(), 5, "{}", session.describe());
+
+    session.send(b"1");
+    assert_eq!(workspace_rows(&session).len(), 1);
+
+    session.send(b"\x1b[B");
+    assert_eq!(highlighted(&session), vec!["ws-01"]);
+    assert!(session.child.try_wait().unwrap().is_none());
+
+    session.send(b"\x06");
+    assert!(block(&session).last().unwrap().contains("/ws-01"));
+    session.send(b"\x1b");
+    assert_eq!(highlighted(&session), vec!["ws-01"]);
+    assert_eq!(workspace_rows(&session).len(), 5);
+}
+
+#[test]
+fn no_match_error_waits_for_navigation_and_slash_restores_the_query() {
+    let (_temp, prefix, state_home) = workspaces(3);
+    let mut session = Session::start(&prefix, &state_home, 12, 80);
+
+    session.send(b"/missing");
+    assert!(
+        !block(&session).iter().any(|line| line.contains("E486")),
+        "{}",
+        session.describe()
+    );
+
+    session.send(b"\r");
+    let rendered = block(&session);
+    let footer = rendered.last().unwrap();
+    assert!(footer.contains("E486: Pattern not found: missing"));
+    assert!(session.child.try_wait().unwrap().is_none());
+
+    session.send(b"/");
+    let rendered = block(&session);
+    let footer = rendered.last().unwrap();
+    assert!(footer.contains("/missing"));
+    assert!(!footer.contains("E486"));
+}
+
+#[test]
+fn incomplete_escape_is_pending_until_navigation_is_requested() {
+    let (_temp, prefix, state_home) = workspaces(3);
+    std::fs::create_dir_all(prefix.join("workspaces").join("example.com")).unwrap();
+    std::fs::create_dir_all(prefix.join("workspaces").join("exampleXcom")).unwrap();
+    let mut session = Session::start(&prefix, &state_home, 12, 80);
+
+    session.send(b"/example\\");
+    assert!(
+        !block(&session)
+            .iter()
+            .any(|line| line.contains("incomplete escape")),
+        "{}",
+        session.describe()
+    );
+
+    session.send(b"\r");
+    assert!(
+        block(&session)
+            .last()
+            .unwrap()
+            .contains("incomplete escape")
+    );
+
+    session.send(b".");
+    let shown = workspace_rows(&session);
+    assert_eq!(shown.len(), 1, "{}", session.describe());
+    assert!(shown[0].contains("example.com"));
+    assert!(
+        !block(&session)
+            .last()
+            .unwrap()
+            .contains("incomplete escape")
+    );
+}
+
+#[test]
+fn full_query_render_mode_keeps_all_names_visible() {
+    let (_temp, prefix, state_home) = workspaces(5);
+    std::fs::create_dir_all(&state_home).unwrap();
+    std::fs::write(
+        state_home.join("config.toml"),
+        "query_render_mode = \"full\"\n",
+    )
+    .unwrap();
+    let mut session = Session::start(&prefix, &state_home, 12, 80);
+
+    session.send(b"/ws-01");
+    let shown = workspace_rows(&session);
+    assert_eq!(shown.len(), 5, "{}", session.describe());
+    assert!(highlighted(&session).contains(&"ws-01".to_owned()));
 }

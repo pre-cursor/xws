@@ -139,12 +139,13 @@ xws pop
 | `XWS_TEMPLATES_DIR` | Directory holding the packaged `profiles/` and `features/` (`share/xws/templates` when installed, `<repo>/templates` in a checkout). It only moves the packaged templates; user overrides in `$XWS_PREFIX/templates` are unaffected. Whatever it points at is copied into new workspaces and executed, so it is trusted like `XWS_PREFIX`: only set it to a location you control. |
 | `XWS_PICKER` | Custom path override for the `xws-picker` binary executable. |
 
-#### Persistent Display Preferences
+#### Persistent Picker Preferences
 
 To keep the picker inline rather than taking over the terminal screen, configure `~/.xws/config.toml`:
 
 ```toml
-screen_buffer = "inline" # or "alternate"
+screen_buffer = "inline"       # or "alternate"
+query_render_mode = "filtered" # or "full"
 ```
 
 You can also override it per invocation:
@@ -152,6 +153,10 @@ You can also override it per invocation:
 ```bash
 XWS_PICKER_DISPLAY=inline xws
 ```
+
+Press `/` or Ctrl-F in the picker to live-filter workspace names. The default
+`query_render_mode = "filtered"` shows matching workspaces only; `"full"` keeps
+the complete list visible and highlights the selected match.
 
 ---
 

@@ -1121,10 +1121,37 @@ fn interactive_picker_reads_keys_and_returns_the_selected_workspace() {
     );
 }
 
+#[test]
+fn picker_query_requires_navigation_then_a_second_enter_to_activate() {
+    let temp = tempdir().unwrap();
+    let prefix = temp.path().join("prefix");
+    let state_home = temp.path().join("state");
+    for name in ["alpha", "beta", "gamma"] {
+        successful(
+            picker(&prefix, &state_home)
+                .args(["create", name])
+                .output()
+                .unwrap(),
+        );
+    }
+
+    let output = run_interactive_picker_with_keys(&prefix, &state_home, None, b"\x06beta\r\r");
+    assert_picker_selected_beta(&output);
+}
+
 fn run_interactive_picker(
     prefix: &std::path::Path,
     state_home: &std::path::Path,
     display: Option<&str>,
+) -> Vec<u8> {
+    run_interactive_picker_with_keys(prefix, state_home, display, b"\x1b[B\r")
+}
+
+fn run_interactive_picker_with_keys(
+    prefix: &std::path::Path,
+    state_home: &std::path::Path,
+    display: Option<&str>,
+    keys: &[u8],
 ) -> Vec<u8> {
     use portable_pty::{CommandBuilder, PtySize, native_pty_system};
     use std::io::Read;
@@ -1185,7 +1212,7 @@ fn run_interactive_picker(
         }
     }
 
-    writer.write_all(b"\x1b[B\r").unwrap();
+    writer.write_all(keys).unwrap();
     let status = loop {
         if child.try_wait().unwrap().is_some() {
             break child.wait().unwrap();
@@ -1226,5 +1253,11 @@ fn assert_picker_selected_beta(terminal_output: &[u8]) {
             .windows("Ctrl-P/Ctrl-N move".len())
             .any(|window| window == "Ctrl-P/Ctrl-N move".as_bytes()),
         "expected picker help text in terminal output"
+    );
+    assert!(
+        terminal_output
+            .windows("Ctrl-F search".len())
+            .any(|window| window == "Ctrl-F search".as_bytes()),
+        "expected the Ctrl-F search shortcut in picker help"
     );
 }

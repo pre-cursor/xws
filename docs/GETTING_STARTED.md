@@ -66,8 +66,15 @@ To pick from the interactive list instead:
 xws
 ```
 
-Use Up/Down (or `k`/`j`) and Enter. Escape, `q`, or Ctrl-C cancels without
-activating a workspace.
+Use Up/Down (or Ctrl-P/Ctrl-N) and Enter to navigate and select. Escape or
+Ctrl-C cancels without activating a workspace. Press `/` or Ctrl-F to
+live-filter by workspace name; type a query and press Enter or a navigation key
+to move into the matching list. Enter there selects the highlighted workspace.
+
+Queries match case-insensitive substrings. A leading `^` matches the start of
+a name, a trailing `$` matches its end, and `.` matches any one character.
+Backslash escapes the next character, so `\.` searches for a literal period.
+Escape while editing a query clears it and restores the original list.
 
 ### Choose the picker display
 
@@ -78,6 +85,7 @@ picker in the normal terminal history instead, set `screen_buffer` to
 
 ```toml
 screen_buffer = "inline"
+query_render_mode = "filtered"
 ```
 
 Set it to `"alternate"` to explicitly select the default behavior:
@@ -85,6 +93,10 @@ Set it to `"alternate"` to explicitly select the default behavior:
 ```toml
 screen_buffer = "alternate"
 ```
+
+`query_render_mode` defaults to `"filtered"`, which displays only matches.
+Set it to `"full"` to keep all workspaces visible while filtering and
+navigating.
 
 The config file is read from `$XWS_STATE_HOME/config.toml` when
 `XWS_STATE_HOME` is set; otherwise, xws uses `~/.xws/config.toml`. Create the
