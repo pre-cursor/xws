@@ -296,14 +296,12 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
             }
             (_, QueryRenderMode::Filtered) => matches.clone(),
         };
-        let preview_selection = match mode {
+        let preview_index = match mode {
             PickerMode::Browse => selected,
-            PickerMode::Query => query_origin_selection
-                .filter(|index| matches.contains(index))
-                .or_else(|| next_match_after(&matches, query_origin_selection)),
+            PickerMode::Query => preview_selection(&matches, query_origin_selection),
             PickerMode::Navigate => selected,
         };
-        let display_selection = preview_selection.and_then(|index| {
+        let display_selection = preview_index.and_then(|index| {
             display_indices
                 .iter()
                 .position(|candidate| *candidate == index)
@@ -354,15 +352,16 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
                             );
                         }
                         PickerMode::Query => {
-                            enter_navigation(
+                            if enter_navigation(
                                 workspaces,
                                 &query,
                                 &mut matches,
-                                query_origin_selection,
-                                &mut selected,
                                 &mut mode,
                                 &mut query_error,
-                            );
+                            ) {
+                                selected =
+                                    adjacent_match(&matches, query_origin_selection, Direction::Up);
+                            }
                             first_visible = 0;
                         }
                         PickerMode::Navigate => {
@@ -391,15 +390,19 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
                             );
                         }
                         PickerMode::Query => {
-                            enter_navigation(
+                            if enter_navigation(
                                 workspaces,
                                 &query,
                                 &mut matches,
-                                query_origin_selection,
-                                &mut selected,
                                 &mut mode,
                                 &mut query_error,
-                            );
+                            ) {
+                                selected = adjacent_match(
+                                    &matches,
+                                    query_origin_selection,
+                                    Direction::Down,
+                                );
+                            }
                             first_visible = 0;
                         }
                         PickerMode::Navigate => {
@@ -433,16 +436,10 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
                         return Ok(selected.map(|index| workspaces[index].clone()));
                     }
                     PickerMode::Query => {
-                        enter_navigation(
-                            workspaces,
-                            &query,
-                            &mut matches,
-                            query_origin_selection,
-                            &mut selected,
-                            &mut mode,
-                            &mut query_error,
-                        );
-                        first_visible = 0;
+                        if validate_query(workspaces, &query, &mut matches, &mut query_error) {
+                            let selected = preview_selection(&matches, query_origin_selection);
+                            return Ok(selected.map(|index| workspaces[index].clone()));
+                        }
                     }
                 },
 
@@ -628,32 +625,70 @@ fn update_matches(query: &[char], workspaces: &[String], matches: &mut Vec<usize
     }
 }
 
-fn enter_navigation(
+fn preview_selection(matches: &[usize], origin: Option<usize>) -> Option<usize> {
+    origin
+        .filter(|index| matches.contains(index))
+        .or_else(|| next_match_after(matches, origin))
+}
+
+fn validate_query(
     workspaces: &[String],
     query: &[char],
     matches: &mut Vec<usize>,
-    origin_selection: Option<usize>,
-    selected: &mut Option<usize>,
-    mode: &mut PickerMode,
     error: &mut Option<QueryError>,
-) {
+) -> bool {
     let updated = match filter_workspaces(workspaces, query) {
         Ok(updated) => updated,
         Err(PatternError::IncompleteEscape) => {
             *error = Some(QueryError::IncompleteEscape);
-            return;
+            return false;
         }
     };
     if updated.is_empty() {
         *matches = updated;
         *error = Some(QueryError::NoMatches);
-        return;
+        return false;
     }
 
     *matches = updated;
-    *selected = next_match_after(matches, origin_selection);
-    *mode = PickerMode::Navigate;
     *error = None;
+    true
+}
+
+fn enter_navigation(
+    workspaces: &[String],
+    query: &[char],
+    matches: &mut Vec<usize>,
+    mode: &mut PickerMode,
+    error: &mut Option<QueryError>,
+) -> bool {
+    if !validate_query(workspaces, query, matches, error) {
+        return false;
+    }
+
+    *mode = PickerMode::Navigate;
+    true
+}
+
+fn adjacent_match(matches: &[usize], origin: Option<usize>, direction: Direction) -> Option<usize> {
+    if matches.is_empty() {
+        return None;
+    }
+
+    let origin = origin.or_else(|| matches.first().copied())?;
+    match direction {
+        Direction::Up => matches
+            .iter()
+            .rev()
+            .copied()
+            .find(|index| *index < origin)
+            .or_else(|| matches.last().copied()),
+        Direction::Down => matches
+            .iter()
+            .copied()
+            .find(|index| *index > origin)
+            .or_else(|| matches.first().copied()),
+    }
 }
 
 fn next_match_after(matches: &[usize], origin: Option<usize>) -> Option<usize> {
@@ -884,7 +919,7 @@ fn render(state: RenderState<'_>) -> Result<(), Box<dyn Error>> {
                             output,
                             MoveToColumn(help_start as u16),
                             Print(fit(
-                                " Enter/↑↓ navigate, Esc reset",
+                                " Enter select, ↑/↓ move, Esc list",
                                 cols.saturating_sub(help_start as u16)
                             ))
                         )?;
@@ -995,6 +1030,19 @@ mod tests {
         assert_eq!(next_match_after(&[], Some(5)), None);
         assert_eq!(move_match(Some(1), &matches, Direction::Up), 5);
         assert_eq!(move_match(Some(5), &matches, Direction::Down), 1);
+    }
+
+    #[test]
+    fn query_navigation_moves_once_from_the_previous_selection() {
+        let matches = [1, 3, 5];
+
+        assert_eq!(adjacent_match(&matches, Some(3), Direction::Up), Some(1));
+        assert_eq!(adjacent_match(&matches, Some(3), Direction::Down), Some(5));
+        assert_eq!(adjacent_match(&matches, Some(0), Direction::Up), Some(5));
+        assert_eq!(adjacent_match(&matches, Some(0), Direction::Down), Some(1));
+        assert_eq!(adjacent_match(&matches, None, Direction::Up), Some(5));
+        assert_eq!(adjacent_match(&matches, None, Direction::Down), Some(3));
+        assert_eq!(adjacent_match(&[3], Some(3), Direction::Down), Some(3));
     }
 
     #[test]

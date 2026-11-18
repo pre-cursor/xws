@@ -264,35 +264,39 @@ fn selection_stays_visible_and_follows_the_keys_after_a_resize() {
 }
 
 #[test]
-fn live_query_filters_and_navigation_key_only_changes_modes() {
+fn live_query_navigation_moves_once_and_enter_activates() {
     let (_temp, prefix, state_home) = workspaces(5);
     let mut session = Session::start(&prefix, &state_home, 12, 80);
 
-    session.send(b"/ws-01");
-    let shown = workspace_rows(&session);
-    assert_eq!(shown.len(), 1, "{}", session.describe());
-    assert!(shown[0].contains("ws-01"), "{}", session.describe());
-
-    session.send(b"\x7f");
+    session.send(b"/ws-0");
     let shown = workspace_rows(&session);
     assert_eq!(shown.len(), 5, "{}", session.describe());
-
-    session.send(b"1");
-    assert_eq!(workspace_rows(&session).len(), 1);
+    assert_eq!(highlighted(&session), vec!["ws-00"]);
 
     session.send(b"\x1b[B");
     assert_eq!(highlighted(&session), vec!["ws-01"]);
     assert!(session.child.try_wait().unwrap().is_none());
 
-    session.send(b"\x06");
-    assert!(block(&session).last().unwrap().contains("/ws-01"));
-    session.send(b"\x1b");
-    assert_eq!(highlighted(&session), vec!["ws-01"]);
-    assert_eq!(workspace_rows(&session).len(), 5);
+    session.send(b"\r");
+    assert!(session.child.try_wait().unwrap().is_some());
 }
 
 #[test]
-fn no_match_error_waits_for_navigation_and_slash_restores_the_query() {
+fn escape_from_query_returns_to_list_and_a_second_escape_exits() {
+    let (_temp, prefix, state_home) = workspaces(3);
+    let mut session = Session::start(&prefix, &state_home, 12, 80);
+
+    session.send(b"/ws-01");
+    session.send(b"\x1b");
+    assert_eq!(workspace_rows(&session).len(), 3);
+    assert!(session.child.try_wait().unwrap().is_none());
+
+    session.send(b"\x1b");
+    assert!(session.child.try_wait().unwrap().is_some());
+}
+
+#[test]
+fn no_match_error_keeps_the_query_editable_and_slash_restores_it() {
     let (_temp, prefix, state_home) = workspaces(3);
     let mut session = Session::start(&prefix, &state_home, 12, 80);
 
@@ -317,7 +321,7 @@ fn no_match_error_waits_for_navigation_and_slash_restores_the_query() {
 }
 
 #[test]
-fn incomplete_escape_is_pending_until_navigation_is_requested() {
+fn incomplete_escape_is_pending_until_an_action_is_requested() {
     let (_temp, prefix, state_home) = workspaces(3);
     std::fs::create_dir_all(prefix.join("workspaces").join("example.com")).unwrap();
     std::fs::create_dir_all(prefix.join("workspaces").join("exampleXcom")).unwrap();

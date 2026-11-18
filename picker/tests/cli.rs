@@ -1122,7 +1122,7 @@ fn interactive_picker_reads_keys_and_returns_the_selected_workspace() {
 }
 
 #[test]
-fn picker_query_requires_navigation_then_a_second_enter_to_activate() {
+fn picker_query_enter_activates_the_preview_selection() {
     let temp = tempdir().unwrap();
     let prefix = temp.path().join("prefix");
     let state_home = temp.path().join("state");
@@ -1135,7 +1135,7 @@ fn picker_query_requires_navigation_then_a_second_enter_to_activate() {
         );
     }
 
-    let output = run_interactive_picker_with_keys(&prefix, &state_home, None, b"\x06beta\r\r");
+    let output = run_interactive_picker_with_keys(&prefix, &state_home, None, b"\x06beta\r");
     assert_picker_selected_beta(&output);
 }
 
