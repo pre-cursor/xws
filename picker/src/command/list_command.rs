@@ -1,3 +1,4 @@
+use super::workspace_warnings::report_workspace_warnings;
 use crate::kernel::workspace::WorkspaceStore;
 use clap::Args;
 use std::env;
@@ -11,7 +12,9 @@ pub fn run(_: ListArgs) -> Result<u8, Box<dyn std::error::Error>> {
     let active = env::var("XWS_WORKSPACE")
         .ok()
         .filter(|name| !name.is_empty());
-    for name in store.list()? {
+    let listing = store.list()?;
+    report_workspace_warnings(&listing.warnings);
+    for name in listing.names {
         let marker = if active.as_deref() == Some(name.as_str()) {
             " *"
         } else {

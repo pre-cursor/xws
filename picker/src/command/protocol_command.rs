@@ -3,6 +3,8 @@ use std::error::Error;
 use clap::{Args, Subcommand};
 
 use super::helpers::encode;
+use super::wire::PROTOCOL_VERSION;
+use super::workspace_warnings::report_workspace_warnings;
 use crate::kernel::{picker, workspace::WorkspaceStore};
 
 #[derive(Args)]
@@ -35,20 +37,22 @@ pub fn run(args: ProtocolArgs) -> Result<u8, Box<dyn Error>> {
     match args.operation {
         ProtocolSubcommand::Env { name } => {
             for (key, value) in store.environment(&name)? {
-                println!("XWS/1\tvar\t{key}\t{}", encode(&value));
+                println!("{PROTOCOL_VERSION}\tvar\t{key}\t{}", encode(&value));
             }
             Ok(0)
         }
         ProtocolSubcommand::Path { name } => {
             println!(
-                "XWS/1\tpath\t{}",
+                "{PROTOCOL_VERSION}\tpath\t{}",
                 encode(&store.workspace_path(&name)?.to_string_lossy())
             );
             Ok(0)
         }
         ProtocolSubcommand::Pick { active } => {
             let active = active.filter(|name| !name.is_empty());
-            let workspaces = store.list()?;
+            let listing = store.list()?;
+            report_workspace_warnings(&listing.warnings);
+            let workspaces = listing.names;
             if workspaces.is_empty() {
                 return Err(format!(
                     "no workspaces found in {}",
@@ -57,8 +61,8 @@ pub fn run(args: ProtocolArgs) -> Result<u8, Box<dyn Error>> {
                 .into());
             }
             match picker::pick(&workspaces, active.as_deref())? {
-                Some(name) => println!("XWS/1\tselected\t{}", encode(&name)),
-                None => println!("XWS/1\tcancel"),
+                Some(name) => println!("{PROTOCOL_VERSION}\tselected\t{}", encode(&name)),
+                None => println!("{PROTOCOL_VERSION}\tcancel"),
             }
             Ok(0)
         }

@@ -6,20 +6,45 @@ use std::process::Command;
 
 use serde::Deserialize;
 
-struct ResolvedProfile {
-    name: String,
+pub use super::validation::{validate_environment_name, validate_name};
+
+struct ResolvedTemplates {
     activate: Option<PathBuf>,
     deactivate: Option<PathBuf>,
     once: Option<PathBuf>,
     env: Option<PathBuf>,
 }
 
+struct ResolvedProfile {
+    name: String,
+    templates: ResolvedTemplates,
+}
+
 struct ResolvedFeature {
     name: String,
-    activate: Option<PathBuf>,
-    deactivate: Option<PathBuf>,
-    once: Option<PathBuf>,
-    env: Option<PathBuf>,
+    templates: ResolvedTemplates,
+}
+
+#[derive(Clone, Copy)]
+enum TemplateKind {
+    Profile,
+    Feature,
+}
+
+impl TemplateKind {
+    fn directory(self) -> &'static str {
+        match self {
+            Self::Profile => "profiles",
+            Self::Feature => "features",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Profile => "profile",
+            Self::Feature => "feature",
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -31,6 +56,18 @@ struct FeatureManifest {
 
 /// Reports whether a workspace is in use by another shell; `Err` blocks the operation.
 pub type OtherShellsGuard<'a> = &'a dyn Fn(&str) -> Result<(), Box<dyn Error>>;
+
+#[derive(Debug)]
+pub struct ListResult {
+    pub names: Vec<String>,
+    pub warnings: Vec<ListWarning>,
+}
+
+#[derive(Debug)]
+pub enum ListWarning {
+    NonUtf8Directory(PathBuf),
+    InvalidName(String),
+}
 
 /// The live activation context as observed by the shell.
 ///
@@ -100,33 +137,37 @@ impl WorkspaceStore {
         self.bundle_names("features")
     }
 
-    pub fn list(&self) -> Result<Vec<String>, Box<dyn Error>> {
+    pub fn list(&self) -> Result<ListResult, Box<dyn Error>> {
         let root = self.workspaces_dir();
         if !root.exists() {
-            return Ok(Vec::new());
+            return Ok(ListResult {
+                names: Vec::new(),
+                warnings: Vec::new(),
+            });
         }
 
         let mut workspaces = Vec::new();
+        let mut warnings = Vec::new();
         for entry in fs::read_dir(root)? {
             let entry = entry?;
             if !entry.file_type()?.is_dir() {
                 continue;
             }
             let Ok(name) = entry.file_name().into_string() else {
-                eprintln!(
-                    "xws: skipping workspace directory with a non-UTF-8 name: {}",
-                    entry.path().display()
-                );
+                warnings.push(ListWarning::NonUtf8Directory(entry.path()));
                 continue;
             };
             if let Err(error) = validate_name(&name) {
-                eprintln!("xws: skipping workspace directory: {error}");
+                warnings.push(ListWarning::InvalidName(error.to_string()));
                 continue;
             }
             workspaces.push(name);
         }
         workspaces.sort();
-        Ok(workspaces)
+        Ok(ListResult {
+            names: workspaces,
+            warnings,
+        })
     }
 
     fn bundle_names(&self, category: &str) -> Result<Vec<String>, Box<dyn Error>> {
@@ -149,8 +190,7 @@ impl WorkspaceStore {
                     .into_string()
                     .map_err(|_| format!("bundle name is not valid UTF-8: {}", root.display()))?;
                 match category {
-                    "profiles" => validate_name(&name)?,
-                    "features" => validate_feature_name(&name)?,
+                    "profiles" | "features" => validate_name(&name)?,
                     _ => return Err(format!("unknown template category '{category}'").into()),
                 }
                 names.insert(name);
@@ -190,14 +230,17 @@ impl WorkspaceStore {
         validate_name(name)?;
         let default_profile = self.resolve_profile("default")?;
         let default_activate = default_profile
+            .templates
             .activate
             .as_ref()
             .ok_or("default profile is missing activate template")?;
         let default_deactivate = default_profile
+            .templates
             .deactivate
             .as_ref()
             .ok_or("default profile is missing deactivate template")?;
         let default_once = default_profile
+            .templates
             .once
             .as_ref()
             .ok_or("default profile is missing once template")?;
@@ -223,12 +266,12 @@ impl WorkspaceStore {
         let env_path = workspace.join("bin/env");
         let mut env_contents = String::from("# NAME=value; literal exported variables\n");
         for profile in std::iter::once(&default_profile).chain(&profile_templates) {
-            if let Some(template) = &profile.env {
+            if let Some(template) = &profile.templates.env {
                 append_environment_template(&mut env_contents, template)?;
             }
         }
         for feature in &feature_templates {
-            if let Some(template) = &feature.env {
+            if let Some(template) = &feature.templates.env {
                 append_environment_template(&mut env_contents, template)?;
             }
         }
@@ -256,7 +299,7 @@ impl WorkspaceStore {
             let mut once_script = Vec::new();
             append_script(&mut once_script, default_once)?;
             for profile in &profile_templates {
-                if let Some(template) = &profile.once {
+                if let Some(template) = &profile.templates.once {
                     append_script(&mut once_script, template).map_err(|error| {
                         format!(
                             "cannot append profile '{}' once script: {error}",
@@ -266,7 +309,7 @@ impl WorkspaceStore {
                 }
             }
             for feature in &feature_templates {
-                if let Some(template) = &feature.once {
+                if let Some(template) = &feature.templates.once {
                     append_script(&mut once_script, template).map_err(|error| {
                         format!(
                             "cannot append feature '{}' once script: {error}",
@@ -279,22 +322,22 @@ impl WorkspaceStore {
 
             let profile_count = profile_templates.len();
             for (index, profile) in profile_templates.iter().enumerate() {
-                if let Some(template) = &profile.activate {
+                if let Some(template) = &profile.templates.activate {
                     let filename = format!("10-profile-{index:020}");
                     fs::copy(template, bin.join("activate.d").join(&filename))?;
                 }
                 let reverse_index = profile_count - index - 1;
-                if let Some(template) = &profile.deactivate {
+                if let Some(template) = &profile.templates.deactivate {
                     let filename = format!("20-profile-{reverse_index:020}");
                     fs::copy(template, bin.join("deactivate.d").join(filename))?;
                 }
             }
             for feature in &feature_templates {
-                if let Some(template) = &feature.activate {
+                if let Some(template) = &feature.templates.activate {
                     let filename = format!("20-feature-{}", feature.name);
                     fs::copy(template, bin.join("activate.d").join(&filename))?;
                 }
-                if let Some(template) = &feature.deactivate {
+                if let Some(template) = &feature.templates.deactivate {
                     let filename = format!("10-feature-{}", feature.name);
                     fs::copy(template, bin.join("deactivate.d").join(filename))?;
                 }
@@ -381,21 +424,34 @@ impl WorkspaceStore {
             return Err(format!("unknown profile '{profile}'").into());
         }
 
-        let activate = self.resolve_bundle_template("profiles", profile, "activate")?;
-        let deactivate = self.resolve_bundle_template("profiles", profile, "deactivate")?;
-        let once = self.resolve_bundle_template("profiles", profile, "once")?;
-        let env = self.resolve_bundle_template("profiles", profile, "env")?;
+        Ok(ResolvedProfile {
+            name: profile.to_owned(),
+            templates: self.resolve_templates(TemplateKind::Profile, profile)?,
+        })
+    }
+
+    fn resolve_templates(
+        &self,
+        kind: TemplateKind,
+        name: &str,
+    ) -> Result<ResolvedTemplates, Box<dyn Error>> {
+        let activate = self.resolve_bundle_template(kind, name, "activate")?;
+        let deactivate = self.resolve_bundle_template(kind, name, "deactivate")?;
+        let once = self.resolve_bundle_template(kind, name, "once")?;
+        let env = self.resolve_bundle_template(kind, name, "env")?;
+
         if activate.is_some() != deactivate.is_some() {
             return Err(format!(
-                "profile '{profile}' must provide activate and deactivate templates together"
+                "{} '{name}' must provide activate and deactivate templates together",
+                kind.label()
             )
             .into());
         }
         if activate.is_none() && once.is_none() && env.is_none() {
-            return Err(format!("profile '{profile}' has no templates").into());
+            return Err(format!("{} '{name}' has no templates", kind.label()).into());
         }
-        Ok(ResolvedProfile {
-            name: profile.to_owned(),
+
+        Ok(ResolvedTemplates {
             activate,
             deactivate,
             once,
@@ -405,14 +461,14 @@ impl WorkspaceStore {
 
     fn resolve_bundle_template(
         &self,
-        category: &str,
+        kind: TemplateKind,
         name: &str,
         template: &str,
     ) -> Result<Option<PathBuf>, Box<dyn Error>> {
         let user_path = self
             .prefix
             .join("templates")
-            .join(category)
+            .join(kind.directory())
             .join(name)
             .join(template);
         if let Some(path) = existing_regular_file(&user_path)? {
@@ -420,7 +476,7 @@ impl WorkspaceStore {
         }
 
         let packaged_path = packaged_templates_root()?
-            .join(category)
+            .join(kind.directory())
             .join(name)
             .join(template);
         existing_regular_file(&packaged_path)
@@ -435,7 +491,7 @@ impl WorkspaceStore {
         let mut resolved = Vec::new();
         let available_features = self.features()?;
         for feature in features {
-            validate_feature_name(feature)?;
+            validate_name(feature)?;
             if !seen.insert(feature) {
                 return Err(format!("feature '{feature}' was selected more than once").into());
             }
@@ -447,7 +503,7 @@ impl WorkspaceStore {
             }
 
             let manifest_path = self
-                .resolve_bundle_template("features", feature, "manifest.toml")?
+                .resolve_bundle_template(TemplateKind::Feature, feature, "manifest.toml")?
                 .ok_or_else(|| format!("feature '{feature}' is missing manifest.toml"))?;
             let manifest_contents = fs::read_to_string(&manifest_path).map_err(|error| {
                 format!(
@@ -462,62 +518,55 @@ impl WorkspaceStore {
                         manifest_path.display()
                     )
                 })?;
-            if let Some(allowed_profiles) = &manifest.with_profiles {
-                if allowed_profiles.is_empty() {
-                    return Err(format!(
-                        "feature '{feature}' manifest with-profiles must not be empty"
-                    )
-                    .into());
-                }
-                let mut allowed = HashSet::new();
-                for profile in allowed_profiles {
-                    validate_name(profile).map_err(|_| {
-                        format!(
-                            "feature '{feature}' manifest contains invalid profile name: {profile:?}"
-                        )
-                    })?;
-                    if profile == "default" || !allowed.insert(profile) {
-                        return Err(format!(
-                            "feature '{feature}' manifest has an invalid or duplicate with-profiles entry: {profile}"
-                        )
-                        .into());
-                    }
-                }
-                if !profiles
-                    .iter()
-                    .any(|profile| allowed_profiles.contains(profile))
-                {
-                    return Err(format!(
-                        "feature '{feature}' requires one of these profiles: {}",
-                        allowed_profiles.join(", ")
-                    )
-                    .into());
-                }
-            }
+            validate_feature_profile_constraints(feature, &manifest, profiles)?;
 
-            let activate = self.resolve_bundle_template("features", feature, "activate")?;
-            let deactivate = self.resolve_bundle_template("features", feature, "deactivate")?;
-            let once = self.resolve_bundle_template("features", feature, "once")?;
-            let env = self.resolve_bundle_template("features", feature, "env")?;
-            if activate.is_some() != deactivate.is_some() {
-                return Err(format!(
-                    "feature '{feature}' must provide activate and deactivate templates together"
-                )
-                .into());
-            }
-            if activate.is_none() && once.is_none() && env.is_none() {
-                return Err(format!("feature '{feature}' has no templates").into());
-            }
             resolved.push(ResolvedFeature {
                 name: feature.clone(),
-                activate,
-                deactivate,
-                once,
-                env,
+                templates: self.resolve_templates(TemplateKind::Feature, feature)?,
             });
         }
         Ok(resolved)
     }
+}
+
+fn validate_feature_profile_constraints(
+    feature: &str,
+    manifest: &FeatureManifest,
+    profiles: &[String],
+) -> Result<(), Box<dyn Error>> {
+    let Some(allowed_profiles) = &manifest.with_profiles else {
+        return Ok(());
+    };
+
+    if allowed_profiles.is_empty() {
+        return Err(format!("feature '{feature}' manifest with-profiles must not be empty").into());
+    }
+
+    let mut allowed = HashSet::new();
+    for profile in allowed_profiles {
+        validate_name(profile).map_err(|_| {
+            format!("feature '{feature}' manifest contains invalid profile name: {profile:?}")
+        })?;
+        if profile == "default" || !allowed.insert(profile) {
+            return Err(format!(
+                "feature '{feature}' manifest has an invalid or duplicate with-profiles entry: {profile}"
+            )
+            .into());
+        }
+    }
+
+    if !profiles
+        .iter()
+        .any(|profile| allowed_profiles.contains(profile))
+    {
+        return Err(format!(
+            "feature '{feature}' requires one of these profiles: {}",
+            allowed_profiles.join(", ")
+        )
+        .into());
+    }
+
+    Ok(())
 }
 
 fn existing_regular_file(path: &Path) -> Result<Option<PathBuf>, Box<dyn Error>> {
@@ -566,87 +615,6 @@ fn packaged_templates_root() -> Result<PathBuf, Box<dyn Error>> {
     }
 
     Err("xws templates not found next to the binary; reinstall xws or set XWS_TEMPLATES_DIR".into())
-}
-
-pub fn validate_name(name: &str) -> Result<(), Box<dyn Error>> {
-    let reason = if name.is_empty() {
-        "cannot be empty"
-    } else if name == "." || name == ".." {
-        "cannot be '.' or '..'"
-    } else if name.starts_with(['-', '.']) {
-        "cannot start with '-' or '.'"
-    } else if name.contains(['/', ':']) {
-        "cannot contain '/' or ':'"
-    } else if name.chars().any(char::is_control) {
-        "cannot contain control characters"
-    } else {
-        return Ok(());
-    };
-    Err(format!("invalid workspace name '{}': {reason}", name.escape_debug()).into())
-}
-
-pub fn validate_feature_name(name: &str) -> Result<(), Box<dyn Error>> {
-    let mut chars = name.chars();
-    let valid_first = chars.next().is_some_and(|ch| ch.is_ascii_alphanumeric());
-    if !valid_first || !chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-') {
-        return Err(format!("invalid feature name: '{name}'").into());
-    }
-    Ok(())
-}
-
-/// Names that change how a shell or the dynamic loader behaves. Blocked as a
-/// floor for `bin/env` and for restored session frames.
-const RESERVED_ENVIRONMENT_NAMES: &[&str] = &[
-    // Shell state and startup
-    "PATH",
-    "HOME",
-    "PWD",
-    "OLDPWD",
-    "IFS",
-    "SHLVL",
-    "SHELL",
-    "CDPATH",
-    "ENV",
-    "BASH_ENV",
-    "BASHOPTS",
-    "SHELLOPTS",
-    "ZDOTDIR",
-    // Code that runs at prompt time or on interpreter startup
-    "PROMPT_COMMAND",
-    "PS0",
-    "PS1",
-    "PS2",
-    "PS4",
-    "PYTHONSTARTUP",
-    // History
-    "HISTFILE",
-];
-
-/// Whole families, so new loader variables need no list update.
-const RESERVED_ENVIRONMENT_PREFIXES: &[&str] = &[
-    "XWS_",
-    "_XWS_",
-    "_xws_",      // xws internals
-    "LD_",        // ELF loader (LD_PRELOAD, LD_LIBRARY_PATH, ...)
-    "DYLD_",      // macOS loader (DYLD_INSERT_LIBRARIES, ...)
-    "BASH_FUNC_", // exported bash functions
-];
-
-pub fn validate_environment_name(name: &str) -> Result<(), Box<dyn Error>> {
-    let mut chars = name.chars();
-    let valid_first = chars
-        .next()
-        .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic());
-    if !valid_first
-        || !chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
-        || RESERVED_ENVIRONMENT_NAMES.contains(&name)
-        || RESERVED_ENVIRONMENT_PREFIXES
-            .iter()
-            .any(|prefix| name.starts_with(prefix))
-    {
-        return Err(format!("invalid or reserved environment variable name: '{name}'").into());
-    }
-    Ok(())
 }
 
 fn append_script(script: &mut Vec<u8>, template: &Path) -> Result<(), Box<dyn Error>> {
@@ -717,52 +685,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accepts_names_with_spaces_and_punctuation() {
-        assert!(validate_name("python project-1").is_ok());
-        assert!(validate_name("java_21").is_ok());
-    }
-
-    #[test]
-    fn rejects_empty_traversal_and_control_names() {
-        for name in [
-            "",
-            ".",
-            "..",
-            "../outside",
-            "two\nlines",
-            "-x",
-            "--help",
-            ".foo",
-            "a:b",
-            "a/b",
-        ] {
-            assert!(validate_name(name).is_err(), "{name:?} should be rejected");
-        }
-    }
-
-    #[test]
-    fn feature_names_cannot_introduce_shell_glob_patterns() {
-        for name in ["", ".", "../java", "java*", "java[1]", "my feature"] {
-            assert!(
-                validate_feature_name(name).is_err(),
-                "{name:?} should be rejected"
-            );
-        }
-        assert!(validate_feature_name("golang-1").is_ok());
-    }
-
-    #[test]
-    fn creates_and_lists_a_workspace_with_spaces() {
+    fn creates_and_lists_a_workspace_with_simple_name() {
         let temp = tempfile::tempdir().unwrap();
         let store = WorkspaceStore {
             prefix: temp.path().to_path_buf(),
         };
-        store.create("python project", &[], &[]).unwrap();
+        store.create("project-1", &[], &[]).unwrap();
 
-        assert_eq!(store.list().unwrap(), ["python project"]);
+        let listing = store.list().unwrap();
+        assert_eq!(listing.names, ["project-1"]);
+        assert!(listing.warnings.is_empty());
         assert!(
             store
-                .workspace_path("python project")
+                .workspace_path("project-1")
                 .unwrap()
                 .join("src")
                 .is_dir()
@@ -797,9 +732,9 @@ mod tests {
             prefix: temp.path().to_path_buf(),
         };
         store
-            .create("with go", &[], &["golang".to_owned()])
+            .create("with-go", &[], &["golang".to_owned()])
             .unwrap();
-        let bin = store.workspace_path("with go").unwrap().join("bin");
+        let bin = store.workspace_path("with-go").unwrap().join("bin");
         assert!(bin.join("activate.d/20-feature-golang").is_file());
         assert!(bin.join("deactivate.d/10-feature-golang").is_file());
     }
@@ -959,42 +894,5 @@ mod tests {
                 ("EMPTY".to_owned(), "".to_owned())
             ]
         );
-        assert!(validate_environment_name("XWS_WORKSPACE").is_err());
-        assert!(validate_environment_name("_xws_local_name").is_err());
-        assert!(validate_environment_name("PATH").is_err());
-    }
-
-    #[test]
-    fn loader_and_prompt_hook_variables_are_reserved() {
-        for name in [
-            "PATH",
-            "LD_PRELOAD",
-            "LD_LIBRARY_PATH",
-            "DYLD_INSERT_LIBRARIES",
-            "DYLD_FRAMEWORK_PATH",
-            "BASH_FUNC_foo",
-            "PROMPT_COMMAND",
-            "PS1",
-            "PYTHONSTARTUP",
-            "HISTFILE",
-        ] {
-            assert!(
-                validate_environment_name(name).is_err(),
-                "{name} should be reserved"
-            );
-        }
-        for name in [
-            "GOPATH",
-            "RUST_LOG",
-            "CC",
-            "PYTHONPATH",
-            "TMPDIR",
-            "LDFLAGS",
-        ] {
-            assert!(
-                validate_environment_name(name).is_ok(),
-                "{name} should be allowed"
-            );
-        }
     }
 }

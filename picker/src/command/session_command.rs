@@ -2,13 +2,12 @@ use std::error::Error;
 
 use clap::{Args, Subcommand};
 
-use super::helpers::{decode, encode};
+use super::helpers::encode;
+use super::wire::{PROTOCOL_VERSION, VariableRecord, parse_session_variable_record};
 use crate::kernel::{
     session::{ActivationFrame, SessionStore},
-    workspace::{validate_environment_name, validate_name},
+    validation::validate_name,
 };
-
-type VariableRecord = (String, String, Option<String>);
 
 #[derive(Args)]
 pub struct SessionArgs {
@@ -48,7 +47,10 @@ pub fn run(args: SessionArgs) -> Result<u8, Box<dyn std::error::Error>> {
 
     match args.operation {
         SessionSubcommand::New { shell_pid } => {
-            println!("XWS/1\tsession\t{}", sessions.create(shell_pid)?);
+            println!(
+                "{PROTOCOL_VERSION}\tsession\t{}",
+                sessions.create(shell_pid)?
+            );
             Ok(0)
         }
 
@@ -75,7 +77,7 @@ pub fn run(args: SessionArgs) -> Result<u8, Box<dyn std::error::Error>> {
         SessionSubcommand::Pop { id } => match sessions.pop(&id)? {
             Some((frame, parent)) => {
                 println!(
-                    "XWS/1\tpopped\t{}\t{}\t{}",
+                    "{PROTOCOL_VERSION}\tpopped\t{}\t{}\t{}",
                     encode(&frame.workspace),
                     encode(&frame.workspace_path),
                     encode(&frame.return_dir)
@@ -83,19 +85,22 @@ pub fn run(args: SessionArgs) -> Result<u8, Box<dyn std::error::Error>> {
                 for (name, state, value) in frame.previous_vars {
                     match value {
                         Some(value) => {
-                            println!("XWS/1\tvar\t{name}\t{state}\t{}", encode(&value))
+                            println!(
+                                "{PROTOCOL_VERSION}\tvar\t{name}\t{state}\t{}",
+                                encode(&value)
+                            )
                         }
-                        None => println!("XWS/1\tvar\t{name}\tunset\t-"),
+                        None => println!("{PROTOCOL_VERSION}\tvar\t{name}\tunset\t-"),
                     }
                 }
                 if let Some(parent) = parent {
                     println!(
-                        "XWS/1\tparent\t{}\t{}",
+                        "{PROTOCOL_VERSION}\tparent\t{}\t{}",
                         encode(&parent.workspace),
                         encode(&parent.workspace_path)
                     );
                 } else {
-                    println!("XWS/1\tempty");
+                    println!("{PROTOCOL_VERSION}\tempty");
                 }
                 Ok(0)
             }
@@ -105,7 +110,7 @@ pub fn run(args: SessionArgs) -> Result<u8, Box<dyn std::error::Error>> {
         SessionSubcommand::Peek { id } => {
             let frame = sessions.top(&id)?.ok_or("xws: session stack is empty")?;
             println!(
-                "XWS/1\ttop\t{}\t{}\t{}",
+                "{PROTOCOL_VERSION}\ttop\t{}\t{}\t{}",
                 encode(&frame.workspace),
                 encode(&frame.workspace_path),
                 encode(&frame.return_dir)
@@ -119,7 +124,7 @@ pub fn run(args: SessionArgs) -> Result<u8, Box<dyn std::error::Error>> {
             } else {
                 "absent"
             };
-            println!("XWS/1\t{kind}");
+            println!("{PROTOCOL_VERSION}\t{kind}");
             Ok(0)
         }
     }
@@ -131,20 +136,15 @@ fn read_var_records() -> Result<Vec<VariableRecord>, Box<dyn Error>> {
     let mut seen = std::collections::HashSet::new();
     for line in io::stdin().lock().lines() {
         let line = line?;
-        let fields: Vec<_> = line.split('\t').collect();
-        if fields.len() != 5 || fields[0] != "XWS/1" || fields[1] != "var" {
-            return Err("invalid XWS/1 session input record".into());
+        let record = parse_session_variable_record(&line)?;
+        if !seen.insert(record.0.clone()) {
+            return Err(format!(
+                "duplicate {PROTOCOL_VERSION} variable record '{}'",
+                record.0
+            )
+            .into());
         }
-        validate_environment_name(fields[2])?;
-        if !seen.insert(fields[2].to_owned()) {
-            return Err(format!("duplicate XWS/1 variable record '{}'", fields[2]).into());
-        }
-        let value = match fields[3] {
-            "set-exported" | "set-local" => Some(decode(fields[4])?),
-            "unset" if fields[4] == "-" => None,
-            _ => return Err("invalid XWS/1 variable state".into()),
-        };
-        vars.push((fields[2].to_owned(), fields[3].to_owned(), value));
+        vars.push(record);
     }
     Ok(vars)
 }

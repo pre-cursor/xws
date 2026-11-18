@@ -1,5 +1,6 @@
 use clap::Args;
 
+use super::workspace_warnings::report_workspace_warnings;
 use crate::kernel::picker;
 
 const CANCELLED: u8 = 130;
@@ -25,7 +26,9 @@ pub fn run(args: PickArgs) -> Result<u8, Box<dyn std::error::Error>> {
 
     let active = args.active.as_deref().filter(|name| !name.is_empty());
 
-    let workspaces = store.list()?;
+    let listing = store.list()?;
+    report_workspace_warnings(&listing.warnings);
+    let workspaces = listing.names;
     if workspaces.is_empty() {
         return Err(format!(
             "no workspaces found in {}",

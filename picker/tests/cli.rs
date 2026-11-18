@@ -828,7 +828,7 @@ fn command_usage_and_invalid_configuration_return_errors() {
             .args(["create", "bad/name"])
             .output()
             .unwrap(),
-        "invalid workspace name",
+        "invalid name",
     );
     for name in ["-x", ".hidden", "a:b"] {
         failed(
@@ -836,7 +836,7 @@ fn command_usage_and_invalid_configuration_return_errors() {
                 .args(["create", "--", name])
                 .output()
                 .unwrap(),
-            "invalid workspace name",
+            "invalid name",
         );
     }
 }
@@ -862,6 +862,26 @@ fn list_skips_invalid_directories_with_a_warning() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "demo\n");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(stderr.matches("skipping workspace directory").count(), 3);
+}
+
+#[test]
+fn pick_commands_report_invalid_workspace_warnings() {
+    let temp = tempdir().unwrap();
+    let prefix = temp.path().join("prefix");
+    let state_home = temp.path().join("state");
+
+    for bad in ["-x", ".hidden", "a:b"] {
+        std::fs::create_dir_all(prefix.join("workspaces").join(bad)).unwrap();
+    }
+
+    for args in [vec!["pick"], vec!["protocol", "pick"]] {
+        let output = picker(&prefix, &state_home).args(args).output().unwrap();
+
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(stderr.matches("skipping workspace directory").count(), 3);
+        assert!(stderr.contains("no workspaces found"));
+    }
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use crate::kernel::workspace;
+use crate::kernel::validation::{validate_environment_name, validate_name};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs::{self, OpenOptions};
@@ -392,12 +392,12 @@ fn set_private_dir(_path: &std::path::Path) -> std::io::Result<()> {
 }
 
 fn validate_frame(frame: &ActivationFrame) -> Result<(), Box<dyn Error>> {
-    workspace::validate_name(&frame.workspace)?;
+    validate_name(&frame.workspace)?;
     if frame.workspace_path.is_empty() || frame.return_dir.is_empty() {
         return Err("invalid xws session frame path".into());
     }
     for (name, state, value) in &frame.previous_vars {
-        workspace::validate_environment_name(name)?;
+        validate_environment_name(name)?;
         match (state.as_str(), value) {
             ("set-exported" | "set-local", Some(_)) | ("unset", None) => {}
             _ => {
