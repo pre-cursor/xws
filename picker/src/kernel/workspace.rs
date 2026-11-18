@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use log::warn;
 use serde::Deserialize;
 
 pub use super::validation::{validate_environment_name, validate_name};
@@ -56,18 +57,6 @@ struct FeatureManifest {
 
 /// Reports whether a workspace is in use by another shell; `Err` blocks the operation.
 pub type OtherShellsGuard<'a> = &'a dyn Fn(&str) -> Result<(), Box<dyn Error>>;
-
-#[derive(Debug)]
-pub struct ListResult {
-    pub names: Vec<String>,
-    pub warnings: Vec<ListWarning>,
-}
-
-#[derive(Debug)]
-pub enum ListWarning {
-    NonUtf8Directory(PathBuf),
-    InvalidName(String),
-}
 
 /// The live activation context as observed by the shell.
 ///
@@ -137,37 +126,33 @@ impl WorkspaceStore {
         self.bundle_names("features")
     }
 
-    pub fn list(&self) -> Result<ListResult, Box<dyn Error>> {
+    pub fn list(&self) -> Result<Vec<String>, Box<dyn Error>> {
         let root = self.workspaces_dir();
         if !root.exists() {
-            return Ok(ListResult {
-                names: Vec::new(),
-                warnings: Vec::new(),
-            });
+            return Ok(Vec::new());
         }
 
         let mut workspaces = Vec::new();
-        let mut warnings = Vec::new();
         for entry in fs::read_dir(root)? {
             let entry = entry?;
             if !entry.file_type()?.is_dir() {
                 continue;
             }
             let Ok(name) = entry.file_name().into_string() else {
-                warnings.push(ListWarning::NonUtf8Directory(entry.path()));
+                warn!(
+                    "xws: skipping workspace directory with a non-UTF-8 name: {}",
+                    entry.path().display()
+                );
                 continue;
             };
             if let Err(error) = validate_name(&name) {
-                warnings.push(ListWarning::InvalidName(error.to_string()));
+                warn!("xws: skipping workspace directory: {error}");
                 continue;
             }
             workspaces.push(name);
         }
         workspaces.sort();
-        Ok(ListResult {
-            names: workspaces,
-            warnings,
-        })
+        Ok(workspaces)
     }
 
     fn bundle_names(&self, category: &str) -> Result<Vec<String>, Box<dyn Error>> {
@@ -693,8 +678,7 @@ mod tests {
         store.create("project-1", &[], &[]).unwrap();
 
         let listing = store.list().unwrap();
-        assert_eq!(listing.names, ["project-1"]);
-        assert!(listing.warnings.is_empty());
+        assert_eq!(listing, ["project-1"]);
         assert!(
             store
                 .workspace_path("project-1")

@@ -4,7 +4,6 @@ use clap::{Args, Subcommand};
 
 use super::helpers::encode;
 use super::wire::PROTOCOL_VERSION;
-use super::workspace_warnings::report_workspace_warnings;
 use crate::kernel::{picker, workspace::WorkspaceStore};
 
 #[derive(Args)]
@@ -50,9 +49,7 @@ pub fn run(args: ProtocolArgs) -> Result<u8, Box<dyn Error>> {
         }
         ProtocolSubcommand::Pick { active } => {
             let active = active.filter(|name| !name.is_empty());
-            let listing = store.list()?;
-            report_workspace_warnings(&listing.warnings);
-            let workspaces = listing.names;
+            let workspaces = store.list()?;
             if workspaces.is_empty() {
                 return Err(format!(
                     "no workspaces found in {}",

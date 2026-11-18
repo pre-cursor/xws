@@ -1,7 +1,9 @@
 use clap::Parser;
 use std::error::Error;
+use std::io::Write;
 use std::process::ExitCode;
 
+use log::error;
 use xws_picker::command;
 
 use clap::builder::styling::{Style, Styles};
@@ -41,18 +43,26 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
+    init_logger();
     match run() {
         Ok(code) => ExitCode::from(code),
         Err(err) => {
-            eprintln!("xws: {err}");
+            let mut message = err.to_string();
             let mut source = err.source();
             while let Some(cause) = source {
-                eprintln!("  Caused by: {cause}");
+                message.push_str(&format!("\n  Caused by: {cause}"));
                 source = cause.source();
             }
+            error!("xws: {message}");
             ExitCode::FAILURE
         }
     }
+}
+
+fn init_logger() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
+        .format(|buf, record| writeln!(buf, "{}", record.args()))
+        .init();
 }
 
 fn run() -> Result<u8, Box<dyn Error>> {

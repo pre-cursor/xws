@@ -6,6 +6,7 @@ use crate::{
     },
 };
 use clap::Args;
+use log::error;
 
 #[derive(Args)]
 pub struct RemoveArgs {
@@ -27,7 +28,7 @@ pub fn run(args: RemoveArgs) -> Result<u8, Box<dyn std::error::Error>> {
             .zip(store.remove_many(&active, &other_shells, &args.names))
     {
         if let Err(error) = result {
-            eprintln!("xws rm: {name}: {error}");
+            error!("xws rm: {name}: {error}");
             failed = true;
         }
     }

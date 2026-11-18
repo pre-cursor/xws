@@ -14,7 +14,6 @@ mod session_command;
 mod version_command;
 mod which_command;
 mod wire;
-mod workspace_warnings;
 
 #[derive(Subcommand)]
 pub enum PickerSubcommand {
