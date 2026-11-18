@@ -6,7 +6,7 @@ use crossterm::cursor::{
     Hide, MoveDown, MoveTo, MoveToColumn, MoveToNextLine, MoveUp, RestorePosition, SavePosition,
     Show,
 };
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::style::{Attribute, Print, ResetColor, SetAttribute};
 use crossterm::terminal::{
     self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
@@ -212,7 +212,10 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
                 continue;
             }
             Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
+                code if code == KeyCode::Up
+                    || (code == KeyCode::Char('p')
+                        && key.modifiers.contains(KeyModifiers::CONTROL)) =>
+                {
                     let index = move_selection(selected, workspaces.len(), Direction::Up);
                     selected = Some(index);
                     first_visible = keep_visible(
@@ -223,7 +226,11 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
                         Direction::Up,
                     );
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
+
+                code if code == KeyCode::Down
+                    || (code == KeyCode::Char('n')
+                        && key.modifiers.contains(KeyModifiers::CONTROL)) =>
+                {
                     let index = move_selection(selected, workspaces.len(), Direction::Down);
                     selected = Some(index);
                     first_visible = keep_visible(
@@ -234,9 +241,15 @@ pub fn pick(workspaces: &[String], active: Option<&str>) -> Result<Option<String
                         Direction::Down,
                     );
                 }
+
+                code if code == KeyCode::Esc
+                    || (code == KeyCode::Char('c')
+                        && key.modifiers.contains(KeyModifiers::CONTROL)) =>
+                {
+                    return Ok(None);
+                }
+
                 KeyCode::Enter => return Ok(selected.map(|index| workspaces[index].clone())),
-                KeyCode::Esc | KeyCode::Char('q') => return Ok(None),
-                KeyCode::Char('c') if is_ctrl_c(&key) => return Ok(None),
                 _ => {}
             },
             _ => {}
@@ -260,10 +273,6 @@ fn fit(text: &str, cols: u16) -> String {
 
 fn viewport_height(rows: u16) -> usize {
     usize::from(rows.saturating_sub(4)).max(1)
-}
-
-fn is_ctrl_c(key: &KeyEvent) -> bool {
-    key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL)
 }
 
 #[derive(Clone, Copy)]
@@ -374,7 +383,10 @@ fn render(
         }
         queue!(
             output,
-            Print(fit("↑/↓ or j/k move  Enter select  q quit", cols))
+            Print(fit(
+                "↑/↓ or Ctrl-P/Ctrl-N move, Enter select, Esc/Ctrl-C cancel",
+                cols
+            ))
         )?;
     }
     if display == DisplayMode::Inline {
@@ -429,13 +441,5 @@ mod tests {
     fn picker_reserves_two_additional_terminal_rows() {
         assert_eq!(viewport_height(24), 20);
         assert_eq!(viewport_height(3), 1);
-    }
-
-    #[test]
-    fn ctrl_c_is_a_cancel_key_only_with_control_modifier() {
-        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
-        let plain_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE);
-        assert!(is_ctrl_c(&ctrl_c));
-        assert!(!is_ctrl_c(&plain_c));
     }
 }

@@ -3,9 +3,11 @@ use std::error::Error;
 pub fn validate_name(name: &str) -> Result<(), Box<dyn Error>> {
     let mut chars = name.chars();
     let valid_first = chars.next().is_some_and(|ch| ch.is_ascii_alphanumeric());
-    if !valid_first || !chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-') {
+    if !valid_first
+        || !chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.')
+    {
         return Err(format!(
-            "invalid name '{}': must start with an ASCII letter or digit and contain only ASCII letters, digits, '_' or '-'",
+            "invalid name '{}': must start with an ASCII letter or digit and contain only ASCII letters, digits, '_', '-' or '.'",
             name.escape_debug()
         )
         .into());
@@ -83,6 +85,8 @@ mod tests {
             "go",
             "venv",
             "java_21",
+            "example.com",
+            "www.example.co.uk",
         ] {
             assert!(validate_name(name).is_ok(), "{name:?} should be accepted");
         }
@@ -95,7 +99,7 @@ mod tests {
         }
         for forbidden in [
             ':', ';', '*', '%', '$', '#', '@', '!', '(', ')', '&', '^', '<', '>', ',', '/', '?',
-            '\'', '"', '{', '}', '[', ']', '\\', '.', '+', '=', '~',
+            '\'', '"', '{', '}', '[', ']', '\\', '+', '=', '~',
         ] {
             let name = format!("a{forbidden}b");
             assert!(validate_name(&name).is_err(), "{name:?} should be rejected");

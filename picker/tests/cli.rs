@@ -133,6 +133,34 @@ fn create_list_path_and_environment_protocol_work_end_to_end() {
 }
 
 #[test]
+fn workspace_names_may_contain_periods() {
+    let temp = tempdir().unwrap();
+    let prefix = temp.path().join("prefix");
+    let state_home = temp.path().join("state");
+
+    successful(
+        picker(&prefix, &state_home)
+            .args(["create", "example.com"])
+            .output()
+            .unwrap(),
+    );
+
+    let listed = successful(picker(&prefix, &state_home).arg("list").output().unwrap());
+    assert_eq!(listed, "example.com\n");
+
+    let path = successful(
+        picker(&prefix, &state_home)
+            .args(["path", "example.com"])
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(
+        path.trim(),
+        prefix.join("workspaces/example.com").to_str().unwrap()
+    );
+}
+
+#[test]
 fn create_composes_repeatable_profiles_with_default_hooks() {
     let temp = tempdir().unwrap();
     let prefix = temp.path().join("prefix");
@@ -1195,8 +1223,8 @@ fn assert_picker_selected_beta(terminal_output: &[u8]) {
     );
     assert!(
         terminal_output
-            .windows("↑/↓ or j/k move".len())
-            .any(|window| window == "↑/↓ or j/k move".as_bytes()),
+            .windows("Ctrl-P/Ctrl-N move".len())
+            .any(|window| window == "Ctrl-P/Ctrl-N move".as_bytes()),
         "expected picker help text in terminal output"
     );
 }
