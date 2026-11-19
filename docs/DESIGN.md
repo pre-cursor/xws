@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-`xws` is an experimental workspace manager, separate from legacy `ws`. It
+`xws` is a developer workspace manager, separate from legacy `ws`. It
 defaults to `$HOME/xws` and neither reads nor migrates legacy workspace data.
 The first version supports Bash and Zsh on Unix-like systems.
 

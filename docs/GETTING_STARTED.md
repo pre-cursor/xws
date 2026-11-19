@@ -47,7 +47,35 @@ xws create "image catalog"
 xws ls
 ```
 
-## 3. Activate in the current shell
+## 3. Search, filter, and navigate filtered views
+
+Run the interactive picker:
+
+```sh
+xws
+```
+
+Press `/` or Ctrl-F to enter a workspace-name query. Queries match
+case-insensitive substrings. A leading `^` matches the start of a name, a
+trailing `$` matches its end, and `.` matches any one character. Backslash
+escapes the next character, so `\.` searches for a literal period.
+
+While editing, Enter activates the highlighted match immediately. Up/Down
+(or Ctrl-P/Ctrl-N) leaves the query and enters filtered navigation, moving
+once through the matching list. Enter then activates the selected workspace.
+Escape while editing clears the query and restores the original list; another
+Escape cancels the picker.
+
+`query_render_mode` controls how the list is shown while filtering and
+navigating. It defaults to `"filtered"`, which shows only matching
+workspaces. Set it to `"full"` to keep every workspace visible and highlight
+the selected match:
+
+```toml
+query_render_mode = "full"
+```
+
+## 4. Activate in the current shell
 
 ```sh
 xws push api
@@ -60,24 +88,6 @@ Activation changes this shell's directory to `api/src`, prepends
 declared environment variables, and sources the workspace hooks. It does not
 launch a child shell.
 
-To pick from the interactive list instead:
-
-```sh
-xws
-```
-
-Use Up/Down (or Ctrl-P/Ctrl-N) and Enter to navigate and select. Escape or
-Ctrl-C cancels without activating a workspace. Press `/` or Ctrl-F to
-live-filter by workspace name. While editing, Enter activates the highlighted
-match immediately; Up/Down (or Ctrl-P/Ctrl-N) leaves the query and moves once
-through the matching list. Enter then activates the selected workspace.
-
-Queries match case-insensitive substrings. A leading `^` matches the start of
-a name, a trailing `$` matches its end, and `.` matches any one character.
-Backslash escapes the next character, so `\.` searches for a literal period.
-Escape while editing a query clears it and restores the original list; another
-Escape cancels the picker.
-
 ### Choose the picker display
 
 By default, the picker uses the alternate screen: it takes over the terminal
@@ -87,7 +97,6 @@ picker in the normal terminal history instead, set `screen_buffer` to
 
 ```toml
 screen_buffer = "inline"
-query_render_mode = "filtered"
 ```
 
 Set it to `"alternate"` to explicitly select the default behavior:
@@ -95,10 +104,6 @@ Set it to `"alternate"` to explicitly select the default behavior:
 ```toml
 screen_buffer = "alternate"
 ```
-
-`query_render_mode` defaults to `"filtered"`, which displays only matches.
-Set it to `"full"` to keep all workspaces visible while filtering and
-navigating.
 
 The config file is read from `$XWS_STATE_HOME/config.toml` when
 `XWS_STATE_HOME` is set; otherwise, xws uses `~/.xws/config.toml`. Create the
@@ -110,7 +115,7 @@ XWS_PICKER_DISPLAY=inline xws
 XWS_PICKER_DISPLAY=alternate xws
 ```
 
-## 4. Stack workspaces and return
+## 5. Stack workspaces and return
 
 Start in any directory, then run:
 
@@ -139,7 +144,7 @@ This is a stack of workspace context and declared environment changes, not a
 snapshot of every shell feature. Functions, aliases, options, and other
 arbitrary hook side effects are not saved automatically.
 
-## 5. Declare tracked environment variables
+## 6. Declare tracked environment variables
 
 Create a workspace and edit its `bin/env` file:
 
@@ -180,7 +185,7 @@ not executed. Names such as `PATH`, `HOME`, `PWD`, `IFS`, `ZDOTDIR`, `PS1`,
 If two stacked workspaces declare the same variable, each frame restores the
 value from the layer beneath it.
 
-## 6. Choose a Java profile and optional features
+## 7. Choose a Java profile and optional features
 
 Profiles establish a workspace's baseline setup. Features are optional
 capabilities you can add to a profile. For example, create a Java workspace:
@@ -206,7 +211,7 @@ deliberately sourced by xws in lexical filename order. Review scripts before
 placing them there; these are trusted shell code. The main `bin/activate` and
 `bin/deactivate` hooks also remain editable.
 
-## 7. Choose a Python environment
+## 8. Choose a Python environment
 
 There are two ways to set up Python, depending on where you want package
 isolation.
@@ -260,7 +265,7 @@ deactivated. Edit `bin/env` if you want a different value. The profile does
 not change Cargo's target directory or manage Rust toolchains; rustup remains
 responsible for toolchain installation and selection.
 
-## 8. Add your own workspace setup
+## 9. Add your own workspace setup
 
 `bin/once` runs in Bash during workspace creation from the workspace root.
 Use it for one-time, workspace-local file setup. Its filesystem changes stay;
@@ -275,7 +280,7 @@ tool's cleanup routine.
 Hooks are trusted code. xws reports hook failures but cannot undo arbitrary
 external side effects.
 
-## 9. Move and remove workspaces
+## 10. Move and remove workspaces
 
 Deactivate a workspace before moving or removing it:
 
@@ -288,7 +293,7 @@ xws rm web "image catalog" feature-demo python-demo conda-demo isolated-demo rus
 Removal is explicit; the picker never deletes entries. Batch removal reports
 bad names and continues processing the remaining operands.
 
-## 10. Configure storage
+## 11. Configure storage
 
 ```sh
 export XWS_PREFIX="$HOME/projects/xws-data"
